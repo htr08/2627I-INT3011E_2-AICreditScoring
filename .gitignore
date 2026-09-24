@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments 
+venv/
+.venv/
+env/
+
+# Jupyter 
+.ipynb_checkpoints/
+
+# Data (raw & processed không commit; splits thì commit) 
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Models (không commit, trừ model cuối dùng cho demo) 
+models/*
+!models/.gitkeep
+!models/final_model.pkl
+
+# Experiment tracking
+mlruns/
+mlartifacts/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Reports (giữ report/model card, bỏ hình generate lại được) 
+reports/figures/*
+!reports/figures/.gitkeep
+
+# Streamlit (giữ config.toml cho theme/deploy, bỏ secrets)
+.streamlit/secrets.toml
+
+# Environment / secrets 
+.env
+.env.*
+
+# Editor / OS 
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Test / coverage 
+.pytest_cache/
+.coverage
+htmlcov/
