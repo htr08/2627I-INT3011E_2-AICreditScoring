@@ -1,4 +1,4 @@
-# KẾ HOẠCH DỰ ÁN
+# PROJECT PLAN
 
 _Dự đoán xác suất vỡ nợ (Probability of Default) – So sánh mô hình & Giải thích bằng SHAP_
 
@@ -58,6 +58,18 @@ Project Charter được chốt tại Tuần 1 – T2, gồm các nội dung sau
 
 - **Ngôn ngữ & Thư viện:** Python, pandas, scikit-learn, imbalanced-learn, XGBoost, LightGBM, CatBoost, Optuna, SHAP.
 - **Quản lý thí nghiệm & Triển khai:** MLflow (Optuna log dạng nested runs), Streamlit, GitHub, GitHub Actions, pytest.
+- **Môi trường ảo (bắt buộc):** Mỗi thành viên tạo và làm việc trong một virtual environment riêng (venv hoặc conda), không cài thư viện vào Python hệ thống. Cài đặt đúng phiên bản đã pin trong `requirements.txt`:
+
+  ```
+  python -m venv venv
+  # Windows:
+  venv\Scripts\activate
+  # macOS/Linux:
+  source venv/bin/activate
+  pip install -r requirements.txt
+  ```
+
+  Thư mục môi trường ảo (`venv/`, `.venv/`, `env/`) không được commit lên Git (đã có trong `.gitignore`). Khi thêm/nâng cấp thư viện, phải cập nhật lại version cụ thể trong `requirements.txt` và thông báo cho cả nhóm để đồng bộ môi trường.
 
 ### 3.3. Danh sách mô hình so sánh
 
@@ -233,11 +245,12 @@ CI pipeline (GitHub Actions) chạy pytest cho các module trong `src/` ở mỗ
 - **Merge:** Mọi thay đổi vào main phải qua Pull Request, được ít nhất 1 thành viên khác approve và CI chạy thành công.
 - **Quy mô PR:** PR nhỏ, mỗi PR giải quyết một tính năng.
 - **Quản lý tập tin:** Không commit dữ liệu thô, dữ liệu trung gian hay file mô hình; đưa vào `.gitignore`. Xóa output của notebook trước khi commit, hoặc chuyển code chuẩn sang `src/`.
+- **Quy tắc đặt tên file:** Toàn bộ tên file và thư mục trong repository (code, notebook, script, config, dữ liệu, báo cáo...) đặt bằng **tiếng Anh**, không dấu, viết thường, phân cách bằng dấu gạch dưới `_` (snake_case) — ví dụ: `preprocessing.py`, `01_eda.ipynb`, `download_data.py`, `final_report.md`. Không dùng tiếng Việt có dấu hoặc khoảng trắng trong tên file để tránh lỗi encoding/path khi chạy trên các hệ điều hành và môi trường CI khác nhau. Nội dung file (báo cáo, comment, docstring) vẫn viết bằng tiếng Việt theo quy định chung của nhóm.
 - **Merge conflict:** Người tạo ra xung đột tự xử lý trước khi yêu cầu review lại.
 
 ### 8.2. Quy định code và quản lý thí nghiệm
 
-- **Tính tái lập:** Cố định random_state = 42 trên toàn bộ thư viện và file code; dùng chung file chỉ số chia dữ liệu.
+- **Tính tái lập:** Cố định random_state = 42 trên toàn bộ thư viện và file code; dùng chung file chỉ số chia dữ liệu. Mọi thành viên chạy code trong virtual environment được tạo từ `requirements.txt` (mục 3.2) để đảm bảo cùng phiên bản thư viện — tránh trường hợp kết quả không tái lập được do khác version giữa các máy.
 - **Đánh giá tập Test:** Tập Test chỉ chạy một lần duy nhất ở Tuần 3 (T3). Calibration, chọn ngưỡng, phân tích lỗi đều thực hiện trên tập Valid.
 - **Theo dõi thí nghiệm:** Mọi lượt huấn luyện đều được log tham số và kết quả trên MLflow; các trial Optuna log dạng nested runs dưới một run cha.
 - **Commit message:** Theo chuẩn Conventional Commits (ví dụ: `feat: add IV-based feature selection`, `fix: leakage in scaler fit`).
