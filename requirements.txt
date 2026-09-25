@@ -13,6 +13,10 @@ catboost==1.2.5
 # Tuning & experiment tracking 
 optuna==3.6.1
 mlflow==2.14.3
+setuptools==75.8.0 
+
+# Config
+PyYAML==6.0.1
 
 # Explainability 
 shap==0.46.0
@@ -21,7 +25,7 @@ shap==0.46.0
 streamlit==1.37.1
 
 # Visualization (EDA, SHAP plots, calibration curve) 
-matplotlib==3.9.1
+matplotlib==3.9.2
 seaborn==0.13.2
 
 # Notebooks 
