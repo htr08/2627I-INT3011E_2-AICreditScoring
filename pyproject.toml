@@ -1,0 +1,10 @@
+[project]
+name = "credit-scoring"
+version = "0.1.0"
+description = "AI Credit Scoring - Default of Credit Card Clients"
+requires-python = ">=3.11,<3.13"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
