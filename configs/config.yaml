@@ -1,0 +1,10 @@
+# Cấu hình dùng chung cho toàn dự án.
+# Các mục split, chi phí FN/FP, PDO, nhóm đặc trưng sẽ bổ sung dần theo project_plan.md.
+
+random_state: 42
+
+mlflow:
+  # Đường dẫn tương đối tính từ thư mục gốc repo (không phụ thuộc thư mục đang chạy).
+  # Có thể ghi đè bằng biến môi trường MLFLOW_TRACKING_URI (vd: server dùng chung của nhóm).
+  tracking_dir: mlruns
+  experiment_name: credit_scoring
