@@ -17,8 +17,7 @@ env/
 # Data (raw & processed không commit; splits thì commit) 
 data/raw/*
 !data/raw/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
+!data/raw/default-of-credit-card-clients.sha256
 
 # Models (không commit, trừ model cuối dùng cho demo) 
 models/*
