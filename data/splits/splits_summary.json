@@ -1,0 +1,17 @@
+{
+  "total_samples": 30000,
+  "splits": {
+    "train": {
+      "count": 18000,
+      "ratio": 0.6
+    },
+    "valid": {
+      "count": 6000,
+      "ratio": 0.2
+    },
+    "test": {
+      "count": 6000,
+      "ratio": 0.2
+    }
+  }
+}
