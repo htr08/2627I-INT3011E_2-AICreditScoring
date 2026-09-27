@@ -14,11 +14,32 @@ env/
 # Jupyter 
 .ipynb_checkpoints/
 
-# Data (raw & processed không commit; splits thì commit) 
+# Data files — chặn theo đuôi ở mọi thư mục (xem project_plan.md mục 8.1).
+# Ngoại lệ (splits, model cuối) được mở lại bằng "!" ở các mục bên dưới.
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.parquet
+*.feather
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.zip
+*.gz
+*.7z
+*.rar
+*.pkl
+*.joblib
+
+# Data (raw & processed không commit; splits thì commit)
 data/raw/*
 !data/raw/.gitkeep
+!data/raw/*.sha256
 data/processed/*
 !data/processed/.gitkeep
+!data/splits/*.csv
 
 # Models (không commit, trừ model cuối dùng cho demo) 
 models/*
