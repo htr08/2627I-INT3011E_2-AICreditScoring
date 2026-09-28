@@ -76,6 +76,12 @@ def compute_confusion_matrix_metrics(
     """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
+
+    if len(y_true) != len(y_prob):
+        raise ValueError(
+            f"Độ dài y_true ({len(y_true)}) và y_prob ({len(y_prob)}) phải bằng nhau."
+        )
+
     y_pred = (y_prob >= threshold).astype(int)
 
     tn, fp, fn, tp = confusion_matrix(y_true, y_pred, labels=[0, 1]).ravel()
@@ -123,6 +129,12 @@ def compute_expected_cost(
     """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
+
+    if len(y_true) != len(y_prob):
+        raise ValueError(
+            f"Độ dài y_true ({len(y_true)}) và y_prob ({len(y_prob)}) phải bằng nhau."
+        )
+
     y_pred = (y_prob >= threshold).astype(int)
 
     is_fn = (y_true == 1) & (y_pred == 0)
@@ -130,6 +142,10 @@ def compute_expected_cost(
 
     if ead is not None:
         ead_arr = np.asarray(ead)
+        if len(ead_arr) != len(y_true):
+            raise ValueError(
+                f"Độ dài ead ({len(ead_arr)}) và y_true ({len(y_true)}) phải bằng nhau."
+            )
         total_cost = np.sum(cost_fn * ead_arr[is_fn]) + np.sum(cost_fp * ead_arr[is_fp])
     else:
         total_cost = cost_fn * np.sum(is_fn) + cost_fp * np.sum(is_fp)
@@ -154,7 +170,7 @@ def find_optimal_threshold(
     - min_expected_cost: Chi phí kỳ vọng bình quân tại ngưỡng tối ưu.
     """
     if thresholds is None:
-        thresholds = np.linspace(0.01, 0.99, 100)
+        thresholds = np.linspace(0.01, 0.99, 99)
 
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
@@ -228,6 +244,12 @@ def bootstrap_metric_ci(
     """
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
+
+    if len(y_true) != len(y_prob):
+        raise ValueError(
+            f"Độ dài y_true ({len(y_true)}) và y_prob ({len(y_prob)}) phải bằng nhau."
+        )
+
     n_samples = len(y_true)
     point_estimate = float(metric_fn(y_true, y_prob))
 
@@ -268,6 +290,11 @@ def bootstrap_auc_diff_ci(
     y_prob_a = np.asarray(y_prob_a)
     y_prob_b = np.asarray(y_prob_b)
 
+    if len(y_true) != len(y_prob_a) or len(y_true) != len(y_prob_b):
+        raise ValueError(
+            f"Độ dài y_true ({len(y_true)}), y_prob_a ({len(y_prob_a)}) và y_prob_b ({len(y_prob_b)}) phải bằng nhau."
+        )
+
     auc_a = compute_roc_auc(y_true, y_prob_a)
     auc_b = compute_roc_auc(y_true, y_prob_b)
     diff_point = auc_a - auc_b
@@ -285,10 +312,15 @@ def bootstrap_auc_diff_ci(
         )
         bootstrapped_diffs.append(diff)
 
-    alpha = (1.0 - ci) / 2.0
-    ci_lower = float(np.percentile(bootstrapped_diffs, 100.0 * alpha))
-    ci_upper = float(np.percentile(bootstrapped_diffs, 100.0 * (1.0 - alpha)))
-    is_significant = bool(ci_lower > 0 or ci_upper < 0)
+    if not bootstrapped_diffs:
+        ci_lower = diff_point
+        ci_upper = diff_point
+        is_significant = False
+    else:
+        alpha = (1.0 - ci) / 2.0
+        ci_lower = float(np.percentile(bootstrapped_diffs, 100.0 * alpha))
+        ci_upper = float(np.percentile(bootstrapped_diffs, 100.0 * (1.0 - alpha)))
+        is_significant = bool(ci_lower > 0 or ci_upper < 0)
 
     return {
         "auc_a": float(auc_a),
@@ -329,6 +361,11 @@ def delong_auc_ci(
     """Ước lượng phương sai và khoảng tin cậy của ROC-AUC bằng phương pháp giải tích DeLong."""
     y_true = np.asarray(y_true)
     y_prob = np.asarray(y_prob)
+
+    if len(y_true) != len(y_prob):
+        raise ValueError(
+            f"Độ dài y_true ({len(y_true)}) và y_prob ({len(y_prob)}) phải bằng nhau."
+        )
 
     pos = y_prob[y_true == 1]
     neg = y_prob[y_true == 0]
@@ -375,6 +412,11 @@ def delong_test(
     y_prob_a = np.asarray(y_prob_a)
     y_prob_b = np.asarray(y_prob_b)
 
+    if len(y_true) != len(y_prob_a) or len(y_true) != len(y_prob_b):
+        raise ValueError(
+            f"Độ dài y_true ({len(y_true)}), y_prob_a ({len(y_prob_a)}) và y_prob_b ({len(y_prob_b)}) phải bằng nhau."
+        )
+
     pos_mask = y_true == 1
     neg_mask = y_true == 0
 
@@ -401,7 +443,7 @@ def delong_test(
     s = (s10 / m) + (s01 / n)
     var_diff = float(s[0, 0] + s[1, 1] - 2.0 * s[0, 1])
 
-    if var_diff <= 0.0:
+    if var_diff <= 1e-12:
         z_stat = 0.0
         p_val = 1.0
         ci_lower = diff
