@@ -47,7 +47,14 @@ def main():
     )
 
     print(f"[3/3] Saving split index files to: {splits_dir.relative_to(PROJECT_ROOT)}...")
-    save_splits(splits=splits, df=df, output_dir=splits_dir)
+    save_splits(
+        splits = splits,
+        df = df,
+        output_dir = splits_dir,
+        target_col = target_col,
+        random_state = random_state,
+        raw_file = raw_path.name,
+    )
 
     print("\n--- SPLIT DISTRIBUTION SUMMARY ---")
     for name, indices in splits.items():

@@ -1,17 +1,24 @@
 {
+  "raw_file": "UCI_Credit_Card.csv",
+  "random_state": 42,
+  "target_col": "default.payment.next.month",
   "total_samples": 30000,
+  "overall_default_rate": 0.2212,
   "splits": {
     "train": {
       "count": 18000,
-      "ratio": 0.6
+      "ratio": 0.6,
+      "default_rate": 0.2212
     },
     "valid": {
       "count": 6000,
-      "ratio": 0.2
+      "ratio": 0.2,
+      "default_rate": 0.2212
     },
     "test": {
       "count": 6000,
-      "ratio": 0.2
+      "ratio": 0.2,
+      "default_rate": 0.2212
     }
   }
 }

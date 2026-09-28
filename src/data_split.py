@@ -7,6 +7,8 @@ from typing import Dict, List, Tuple
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
+import numpy as np
+
 from src.config import PROJECT_ROOT, load_config
 
 
@@ -32,7 +34,7 @@ def split_indices(
     if target_col not in df.columns:
         raise KeyError(f"Không tìm thấy cột mục tiêu '{target_col}' trong DataFrame.")
 
-    indices = df.index.to_numpy()
+    indices = np.arange(len(df))
     targets = df[target_col].to_numpy()
 
     # Bước 1: Tách Test set
@@ -45,7 +47,7 @@ def split_indices(
 
     # Bước 2: Tách Valid set từ Train+Val
     val_relative_ratio = valid_ratio / (train_ratio + valid_ratio)
-    train_val_targets = df.loc[train_val_idx, target_col].to_numpy()
+    train_val_targets = df[target_col].to_numpy()[train_val_idx]
 
     train_idx, val_idx = train_test_split(
         train_val_idx,
@@ -65,33 +67,40 @@ def save_splits(
     splits: Dict[str, List[int]],
     df: pd.DataFrame,
     output_dir: Path,
+    target_col: str = None,
+    random_state: int = None,
+    raw_file: str = None,
 ) -> None:
-    """Lưu danh sách chỉ số ra file CSV và JSON vào thư mục output_dir."""
+    """Lưu danh sách chỉ số ra file JSON vào thư mục output_dir."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Lưu các file CSV (kèm ID nếu dữ liệu có cột ID)
-    has_id = "ID" in df.columns
-    for split_name, idx_list in splits.items():
-        split_df = pd.DataFrame({"row_index": idx_list})
-        if has_id:
-            split_df["ID"] = df.loc[idx_list, "ID"].values
-        split_df.to_csv(output_dir / f"{split_name}_indices.csv", index=False)
-
-    # 2. Lưu file tổng hợp splits.json
+    # 1. Lưu file tổng hợp splits.json
     with open(output_dir / "splits.json", "w", encoding="utf-8") as f:
         json.dump(splits, f, indent=2)
 
-    # 3. Lưu file metadata/summary để tra cứu nhanh
+    # 2. Lưu file metadata/summary để tra cứu nhanh
+    has_target = target_col is not None and target_col in df.columns
     summary = {
+        "raw_file": Path(raw_file).name if raw_file else None,
+        "random_state": random_state,
+        "target_col": target_col,
         "total_samples": len(df),
-        "splits": {
-            k: {
-                "count": len(v),
-                "ratio": round(len(v) / len(df), 4),
-            }
-            for k, v in splits.items()
-        },
     }
+    if has_target:
+        summary["overall_default_rate"] = round(float(df[target_col].mean()), 4)
+
+    splits_info = {}
+    for k, v in splits.items():
+        info = {
+            "count": len(v),
+            "ratio": round(len(v) / len(df), 4),
+        }
+        if has_target:
+            info["default_rate"] = round(float(df[target_col].to_numpy()[v].mean()),4)
+        splits_info[k] = info
+
+    summary["splits"] = splits_info
+
     with open(output_dir / "splits_summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
@@ -117,9 +126,10 @@ def load_split_data(
     splits_dir: Path = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Hàm tiện ích nạp sẵn 3 DataFrame: Train, Valid, Test cho các thành viên khác."""
-    config = load_config()
-    raw_path = raw_path or (PROJECT_ROOT / config["data"]["raw_path"])
-    splits_dir = splits_dir or (PROJECT_ROOT / config["data"]["splits_dir"])
+    if raw_path is None or splits_dir is None:
+        config = load_config()
+        raw_path = raw_path or (PROJECT_ROOT / config["data"]["raw_path"])
+        splits_dir = splits_dir or (PROJECT_ROOT / config["data"]["splits_dir"])
 
     df = pd.read_csv(raw_path)
     splits = load_split_indices(splits_dir)
