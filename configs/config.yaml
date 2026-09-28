@@ -3,6 +3,14 @@
 
 random_state: 42
 
+data:
+  raw_path: data/raw/UCI_Credit_Card.csv
+  target_col: default.payment.next.month
+  splits_dir: data/splits
+  train_ratio: 0.6
+  valid_ratio: 0.2
+  test_ratio: 0.2
+
 mlflow:
   # Đường dẫn tương đối tính từ thư mục gốc repo (không phụ thuộc thư mục đang chạy).
   # Có thể ghi đè bằng biến môi trường MLFLOW_TRACKING_URI (vd: server dùng chung của nhóm).
