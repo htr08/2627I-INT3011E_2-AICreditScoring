@@ -36,10 +36,7 @@ env/
 # Data (raw & processed không commit; splits thì commit)
 data/raw/*
 !data/raw/.gitkeep
-!data/raw/*.sha256
-data/processed/*
-!data/processed/.gitkeep
-!data/splits/*.csv
+!data/raw/default-of-credit-card-clients.sha256
 
 # Models (không commit, trừ model cuối dùng cho demo) 
 models/*
