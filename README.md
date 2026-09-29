@@ -33,6 +33,14 @@ Xem kết quả:
 mlflow ui --backend-store-uri ./mlruns
 ```
 
+## Demo Streamlit
+
+```bash
+streamlit run app/streamlit_app.py
+```
+
+Hiện chạy với mock model (hệ số đặt tay). Bố cục và giao diện với mô hình xem `reports/demo_wireframe.md`.
+
 ## Kiểm thử
 
 ```bash
