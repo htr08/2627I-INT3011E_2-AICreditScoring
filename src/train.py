@@ -2,36 +2,92 @@
 
 Task: Sep 28 + Sep 29 (CoReach) — Baseline CV + Log toàn bộ vào MLflow.
 
-Chạy:
+Chạy chính thức:
+    python scripts/run_pipeline.py
+Hoặc:
     python -m src.train
 """
 
-import json
+import hashlib
+import logging
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import mlflow
 import mlflow.sklearn
 import numpy as np
+from mlflow.models import infer_signature
+from sklearn.base import BaseEstimator, clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.tree import DecisionTreeClassifier
 
+from src.config import load_config
 from src.data_split import load_split_data
 from src.evaluate import evaluate_predictions
 from src.features import build_features, make_pipeline
 from src.tracking import setup_mlflow
 
-MODELS: Dict = {
-    "logreg_baseline": LogisticRegression(max_iter=1000, random_state=42),
-    "dt_baseline": DecisionTreeClassifier(max_depth=5, random_state=42),
-}
+logger = logging.getLogger(__name__)
+
+# Whitelist các chỉ số được phép log vào MLflow — theo khuyến nghị review PR #16.
+# Không bao gồm:
+#   - threshold (hằng số 0.5)
+#   - tn, fp, fn, tp (phụ thuộc kích thước fold, không có nghĩa thống kê khi tính mean/std)
+#   - optimal_threshold, min_expected_cost (bị tối ưu trên chính val fold → lạc quan quá mức)
+REPORT_METRICS: List[str] = [
+    "roc_auc",
+    "gini",
+    "ks",
+    "pr_auc",
+    "brier_score",
+    "precision",
+    "recall",
+    "f1",
+]
 
 N_SPLITS = 5
 MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
 
 
-def run_cv(pipeline, X, y, n_splits: int = N_SPLITS) -> List[Dict]:
+def get_baseline_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
+    """Factory tạo dictionary estimator mới, tránh chia sẻ instance bị mutate."""
+    return {
+        "logreg_baseline": LogisticRegression(max_iter=1000, random_state=random_state),
+        "dt_baseline": DecisionTreeClassifier(max_depth=5, random_state=random_state),
+    }
+
+
+# Backwards compatibility
+MODELS: Dict[str, BaseEstimator] = get_baseline_models(42)
+
+
+def get_data_version_tags() -> Dict[str, str]:
+    """Lấy checksum dataset hoặc hash splits.json để log vào tag MLflow."""
+    tags: Dict[str, str] = {}
+    base_dir = Path(__file__).resolve().parents[1]
+
+    # 1. Dataset checksum (từ file .sha256 nếu có)
+    sha256_path = base_dir / "data" / "raw" / "default-of-credit-card-clients.sha256"
+    if sha256_path.exists():
+        tags["data_sha256"] = sha256_path.read_text(encoding="utf-8").strip()
+
+    # 2. Hash của splits.json
+    splits_path = base_dir / "data" / "splits" / "splits.json"
+    if splits_path.exists():
+        tags["splits_hash"] = hashlib.sha256(splits_path.read_bytes()).hexdigest()[:16]
+        tags["splits_file"] = "data/splits/splits.json"
+
+    return tags
+
+
+def run_cv(
+    pipeline,
+    X,
+    y,
+    n_splits: int = N_SPLITS,
+    random_state: Optional[int] = None,
+) -> List[Dict]:
     """Chạy Stratified K-Fold CV, trả về list metrics mỗi fold.
 
     Args:
@@ -39,11 +95,17 @@ def run_cv(pipeline, X, y, n_splits: int = N_SPLITS) -> List[Dict]:
         X: Feature DataFrame (từ build_features).
         y: Series nhãn nhị phân.
         n_splits: Số fold (mặc định 5).
+        random_state: Seed cho StratifiedKFold (nếu None sẽ đọc từ config).
 
     Returns:
         List[Dict]: Mỗi phần tử là dict metrics của 1 fold (có thêm key "fold").
+                    Chỉ chứa các key trong REPORT_METRICS (+ "fold").
     """
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    if random_state is None:
+        cfg = load_config()
+        random_state = cfg.get("random_state", 42)
+
+    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
     fold_metrics = []
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), start=1):
@@ -53,90 +115,128 @@ def run_cv(pipeline, X, y, n_splits: int = N_SPLITS) -> List[Dict]:
         pipeline.fit(X_tr, y_tr)
         y_proba = pipeline.predict_proba(X_val)[:, 1]
 
-        metrics = evaluate_predictions(y_val.to_numpy(), y_proba)
+        all_metrics = evaluate_predictions(y_val.to_numpy(), y_proba)
+        # Chỉ giữ lại các metric trong whitelist — loại optimal_threshold & min_expected_cost
+        metrics = {k: all_metrics[k] for k in REPORT_METRICS if k in all_metrics}
         metrics["fold"] = fold
         fold_metrics.append(metrics)
-        print(f"  Fold {fold}: AUC={metrics['roc_auc']:.4f}  KS={metrics['ks']:.4f}")
+        logger.info(
+            "  Fold %d: AUC=%.4f  KS=%.4f  Gini=%.4f",
+            fold,
+            metrics["roc_auc"],
+            metrics["ks"],
+            metrics["gini"],
+        )
 
     return fold_metrics
 
 
 def train_baseline() -> None:
-    """Huấn luyện LR và DT với 5-fold CV, log toàn bộ kết quả vào MLflow."""
+    """Huấn luyện LR và DT với 5-fold CV, log kết quả có chọn lọc vào MLflow."""
+    cfg = load_config()
+    random_state = cfg.get("random_state", 42)
+    target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
+
     setup_mlflow()
     train_df, _, _ = load_split_data()
-    X, y = build_features(train_df)
+    X, y = build_features(train_df, target_col=target_col)
 
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    run_registry: Dict[str, str] = {}
 
-    print(f"Train size: {len(X)} samples, {X.shape[1]} features\n")
+    logger.info("Train size: %d samples, %d features", len(X), X.shape[1])
 
-    for run_name, estimator in MODELS.items():
-        print(f"=== {run_name} ===")
-        pipe = make_pipeline(estimator)
-        fold_metrics = run_cv(pipe, X, y)
+    models = get_baseline_models(random_state=random_state)
+    data_tags = get_data_version_tags()
 
-        # Tổng hợp mean/std
+    for run_name, estimator in models.items():
+        logger.info("=== %s ===", run_name)
+        # clone() đảm bảo estimator luôn ở trạng thái mới — tránh mutate instance
+        pipe = make_pipeline(clone(estimator))
+        fold_metrics = run_cv(pipe, X, y, n_splits=N_SPLITS, random_state=random_state)
+
+        # Tổng hợp mean/std — dùng ddof=1 (std mẫu) phù hợp khi báo cáo "± std" với 5 fold.
         keys = [k for k in fold_metrics[0] if k != "fold"]
         summary = {
             k: (
                 round(float(np.mean([m[k] for m in fold_metrics])), 6),
-                round(float(np.std([m[k] for m in fold_metrics])), 6),
+                round(float(np.std([m[k] for m in fold_metrics], ddof=1)), 6),
             )
             for k in keys
         }
 
-        with mlflow.start_run(run_name=run_name) as run:
+        with mlflow.start_run(run_name=run_name):
             # 1. Params
             mlflow.log_param("model", run_name)
             mlflow.log_param("n_splits", N_SPLITS)
             mlflow.log_param("n_features", X.shape[1])
-            mlflow.log_params(estimator.get_params())
+            mlflow.log_params(clone(estimator).get_params())
 
-            # 2. Metrics — mean & std
+            # 2. Metrics — mean & std (chỉ whitelist REPORT_METRICS)
             for metric, (mean, std) in summary.items():
                 mlflow.log_metric(f"{metric}_mean", mean)
                 mlflow.log_metric(f"{metric}_std", std)
 
-            # 3. Per-fold metrics (dùng step=fold_number để xem trend trong UI)
+            # 3. Per-fold metrics (dùng step=fold_number để xem xu hướng trong MLflow UI)
             for m in fold_metrics:
                 fold = m["fold"]
                 for k, v in m.items():
                     if k != "fold":
                         mlflow.log_metric(f"{k}_fold", v, step=fold)
 
-            # 4. Dataset tags
-            mlflow.set_tags({
+            # 4. Dataset tags — đọc từ config, checksum, và giải thích ngữ cảnh
+            tags = {
                 "train_size": len(X),
                 "default_rate": round(float(y.mean()), 4),
                 "feature_strategy": "option_a_all_features",
-                "feature_names": ",".join(X.columns.tolist()),
-                "random_state": 42,
+                "random_state": random_state,
+                "target_col": target_col,
                 "task": "baseline_cv",
-            })
+                "threshold_note": "fixed at 0.5, imbalanced data (22% default)",
+                "option_a_note": (
+                    "Categorical features (EDUCATION, MARRIAGE, SEX, PAY_*) treated as numeric; "
+                    "StandardScaler included for uniform pipeline though redundant for DT"
+                ),
+            }
+            tags.update(data_tags)
+            mlflow.set_tags(tags)
 
-            # 5. Model artifact — fit lại toàn bộ train set, lưu vào MLflow
+            # feature_names log riêng bằng log_dict để tránh giới hạn độ dài của tag
+            mlflow.log_dict(
+                {"feature_names": X.columns.tolist()},
+                artifact_file="feature_names.json",
+            )
+
+            # 5. Model artifact — fit lại toàn bộ train set, thêm signature để MLflow biết input schema.
+            # Không đăng ký vào Model Registry — baseline không cần versioning tự động.
             pipe.fit(X, y)
+            signature = infer_signature(X, pipe.predict_proba(X))
             mlflow.sklearn.log_model(
                 sk_model=pipe,
                 artifact_path="model",
-                registered_model_name=run_name,
+                signature=signature,
             )
 
-            # 6. Cập nhật run_registry.json để bạn XAI dễ load
-            run_registry[run_name] = run.info.run_id
-
-        print(f"  → AUC: {summary['roc_auc'][0]:.4f} ± {summary['roc_auc'][1]:.4f}")
-        print(f"  → KS:  {summary['ks'][0]:.4f} ± {summary['ks'][1]:.4f}")
-        print(f"  → Gini:{summary['gini'][0]:.4f} ± {summary['gini'][1]:.4f}\n")
-
-    # Lưu run_registry.json cho bạn XAI/C load lại model
-    registry_path = MODELS_DIR / "run_registry.json"
-    with open(registry_path, "w", encoding="utf-8") as f:
-        json.dump(run_registry, f, indent=2)
-    print(f"Run registry saved → {registry_path}")
+        logger.info(
+            "  → AUC: %.4f ± %.4f",
+            summary["roc_auc"][0],
+            summary["roc_auc"][1],
+        )
+        logger.info(
+            "  → KS:  %.4f ± %.4f",
+            summary["ks"][0],
+            summary["ks"][1],
+        )
+        logger.info(
+            "  → Gini:%.4f ± %.4f\n",
+            summary["gini"][0],
+            summary["gini"][1],
+        )
 
 
 if __name__ == "__main__":
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+    )
     train_baseline()
