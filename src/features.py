@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from sklearn.base import BaseEstimator, TransformerMixin
+
 
 # Create credit utilization features from monthly bill amounts.
 def create_utilization_features(df: pd.DataFrame) -> pd.DataFrame:
@@ -48,7 +50,8 @@ def max_consecutive_late(values):
 def create_payment_trend_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    pay_cols = [f"PAY_{i}" for i in range(1, 7)]
+    # PAY_6 is the oldest month, PAY_1 is the most recent month.
+    pay_cols = [f"PAY_{i}" for i in range(6, 0, -1)]
 
     df["PAY_MEAN"] = df[pay_cols].mean(axis=1)
     df["PAY_MAX"] = df[pay_cols].max(axis=1)
@@ -132,16 +135,24 @@ def calculate_iv(
         "target": target
     }).dropna()
 
-    grouped = data.groupby("feature")["target"]
-
+    grouped = data.groupby(
+        "feature",
+        observed=False
+    )["target"]
+    
     good = grouped.apply(lambda x: (x == 0).sum())
     bad = grouped.apply(lambda x: (x == 1).sum())
 
     good_total = good.sum()
     bad_total = bad.sum()
 
-    good_dist = (good + 0.5) / (good_total + 0.5 * len(good))
-    bad_dist = (bad + 0.5) / (bad_total + 0.5 * len(bad))
+    good_dist = (good + 0.5) / (
+        good_total + 0.5 * len(good)
+    )
+
+    bad_dist = (bad + 0.5) / (
+        bad_total + 0.5 * len(bad)
+    )
 
     woe = np.log(good_dist / bad_dist)
 
@@ -192,7 +203,9 @@ def fit_age_bins(
             continue
 
     if best_edges is None:
-        raise ValueError("Unable to create age bins from training data.")
+        raise ValueError(
+            "Unable to create age bins from training data."
+        )
 
     return best_edges
 
@@ -230,3 +243,175 @@ def create_age_bin_features(
     )
 
     return df, age_edges
+
+
+class AgeBinningTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, min_bins=3, max_bins=8):
+        self.min_bins = min_bins
+        self.max_bins = max_bins
+
+    def fit(self, X, y):
+        X = X.copy()
+        y = pd.Series(y, index=X.index)
+
+        # Some unit tests use data without AGE.
+        # In that case, skip age binning.
+        if "AGE" not in X.columns:
+            self.age_edges_ = None
+            return self
+
+        self.age_edges_ = fit_age_bins(
+            X,
+            y,
+            min_bins=self.min_bins,
+            max_bins=self.max_bins
+        )
+
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+
+        # Skip age binning if AGE was not available during fitting.
+        if self.age_edges_ is None:
+            return X
+
+        X["AGE_BIN"] = pd.cut(
+            X["AGE"],
+            bins=self.age_edges_,
+            include_lowest=True
+        )
+
+        X = X.drop(columns=["AGE"])
+
+        return X
+
+
+# Transform numerical and categorical features into Weight of Evidence (WoE)
+# and select features based on Information Value (IV).
+class WoEIVTransformer(BaseEstimator, TransformerMixin):
+    def __init__(self, n_bins=5, iv_threshold=0.02):
+        self.n_bins = n_bins
+        self.iv_threshold = iv_threshold
+
+    # Learn binning rules, WoE values, and IV from training data.
+    def fit(self, X, y):
+        X = X.copy()
+        y = pd.Series(y, index=X.index)
+
+        self.bin_edges_ = {}
+        self.category_maps_ = {}
+        self.woe_maps_ = {}
+        self.iv_values_ = {}
+
+        # Process each feature independently.
+        for col in X.columns:
+            try:
+                if pd.api.types.is_numeric_dtype(X[col]):
+                    # Create quantile-based bins for numerical features.
+                    _, edges = pd.qcut(
+                        X[col],
+                        q=self.n_bins,
+                        retbins=True,
+                        duplicates="drop"
+                    )
+
+                    edges = np.unique(edges)
+
+                    if len(edges) < 2:
+                        continue
+
+                    bins = pd.cut(
+                        X[col],
+                        bins=edges,
+                        include_lowest=True
+                    )
+
+                    self.bin_edges_[col] = edges
+
+                else:
+                    # Treat each category as a separate bin.
+                    bins = X[col].astype(str)
+                    self.category_maps_[col] = bins.unique().tolist()
+
+                data = pd.DataFrame({
+                    "bin": bins,
+                    "target": y
+                })
+
+                # Count good (target=0) and bad (target=1) samples.
+                grouped = data.groupby(
+                    "bin",
+                    observed=False
+                )["target"]
+
+                good = grouped.apply(
+                    lambda x: (x == 0).sum()
+                )
+
+                bad = grouped.apply(
+                    lambda x: (x == 1).sum()
+                )
+
+                # Calculate smoothed distributions.
+                good_dist = (good + 0.5) / (
+                    good.sum() + 0.5 * len(good)
+                )
+
+                bad_dist = (bad + 0.5) / (
+                    bad.sum() + 0.5 * len(bad)
+                )
+
+                # Calculate WoE.
+                woe = np.log(
+                    good_dist / bad_dist
+                )
+
+                # Calculate IV.
+                iv = (
+                    (good_dist - bad_dist) * woe
+                ).sum()
+
+                self.woe_maps_[col] = woe.to_dict()
+                self.iv_values_[col] = iv
+
+            except (TypeError, ValueError):
+                continue
+
+        # Keep only features whose IV reaches the threshold.
+        self.selected_features_ = [
+            col
+            for col, iv in self.iv_values_.items()
+            if iv >= self.iv_threshold
+        ]
+
+        return self
+
+    # Apply the learned binning and WoE transformation.
+    def transform(self, X):
+        X = X.copy()
+
+        result = pd.DataFrame(index=X.index)
+
+        for col in self.selected_features_:
+            if col in self.bin_edges_:
+                # Transform numerical features using learned bins.
+                bins = pd.cut(
+                    X[col],
+                    bins=self.bin_edges_[col],
+                    include_lowest=True
+                )
+            else:
+                # Transform categorical features using learned categories.
+                bins = X[col].astype(str)
+
+            mapped = bins.map(
+                self.woe_maps_[col]
+            )
+
+            result[col] = pd.to_numeric(
+                mapped,
+                errors="coerce"
+            ).fillna(0.0)
+
+        return result

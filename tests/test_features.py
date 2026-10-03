@@ -13,8 +13,8 @@ from src.features import (
     fit_age_bins,
     transform_age_bins,
     create_age_bin_features,
+    WoEIVTransformer,
 )
-
 
 # Test credit utilization features.
 def test_create_utilization_features():
@@ -196,3 +196,153 @@ def test_create_age_bin_features():
     assert "AGE_BIN" in result.columns
     assert len(edges) >= 3
     assert result["AGE_BIN"].notna().all()
+
+def test_woe_iv_transformer():
+    X = pd.DataFrame({
+        "feature": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1
+    ])
+
+    transformer = WoEIVTransformer(
+        n_bins=2,
+        iv_threshold=0.0
+    )
+
+    result = transformer.fit_transform(X, y)
+
+    # Check that IV is calculated for the feature.
+    assert "feature" in transformer.iv_values_
+
+    # Check that the feature passes the IV threshold.
+    assert "feature" in transformer.selected_features_
+
+    # Check that the transformed data keeps the same shape.
+    assert result.shape == X.shape
+
+    # Check that the WoE values are numeric and not missing.
+    assert result["feature"].notna().all()
+
+from src.preprocessing import build_scorecard_pipeline
+
+def test_scorecard_pipeline():
+    X = pd.DataFrame({
+        "feature": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1
+    ])
+
+    pipeline = build_scorecard_pipeline()
+
+    pipeline.fit(X, y)
+
+    result = pipeline.predict(X)
+
+    # Check that the pipeline produces predictions.
+    assert len(result) == len(y)
+
+    # Check that the WoE transformer is fitted inside the pipeline.
+    assert hasattr(
+        pipeline.named_steps["woe_iv"],
+        "iv_values_"
+    )
+
+def test_woe_iv_transformer_categorical():
+    X = pd.DataFrame({
+        "education": [
+            "low", "low", "low", "medium", "medium",
+            "high", "high", "high", "high", "high"
+        ]
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 1,
+        1, 1, 1, 1, 1
+    ])
+
+    transformer = WoEIVTransformer(
+        iv_threshold=0.0
+    )
+
+    result = transformer.fit_transform(X, y)
+
+    # Check that IV is calculated for the categorical feature.
+    assert "education" in transformer.iv_values_
+
+    # Check that the feature passes the IV threshold.
+    assert "education" in transformer.selected_features_
+
+    # Check that the transformed values are numeric.
+    assert pd.api.types.is_numeric_dtype(
+        result["education"]
+    )
+
+    # Check that the transformed values are not missing.
+    assert result["education"].notna().all()
+
+def test_scorecard_pipeline_drops_sex():
+    X = pd.DataFrame({
+        "SEX": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+        "feature": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1
+    ])
+
+    pipeline = build_scorecard_pipeline()
+
+    pipeline.fit(X, y)
+
+    # Check that SEX is removed before WoE and model training.
+    woe = pipeline.named_steps["woe_iv"]
+    assert "SEX" not in woe.iv_values_
+
+def test_scorecard_pipeline_with_cv():
+    from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+    X = pd.DataFrame({
+        "feature_1": range(1, 21),
+        "feature_2": [
+            "low", "low", "low", "low", "low",
+            "medium", "medium", "medium", "medium", "medium",
+            "high", "high", "high", "high", "high",
+            "high", "high", "high", "high", "high"
+        ]
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0,
+        1, 1, 1, 1, 1,
+        1, 1, 1, 1, 1
+    ])
+
+    pipeline = build_scorecard_pipeline()
+
+    cv = StratifiedKFold(
+        n_splits=5,
+        shuffle=True,
+        random_state=42
+    )
+
+    scores = cross_val_score(
+        pipeline,
+        X,
+        y,
+        cv=cv,
+        scoring="roc_auc"
+    )
+
+    # Check that cross-validation runs successfully.
+    assert len(scores) == 5
+
+    # Check that all folds produce valid scores.
+    assert np.isfinite(scores).all()
