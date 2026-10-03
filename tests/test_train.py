@@ -217,3 +217,9 @@ def test_train_baseline_mlflow(tmp_path, dummy_train_df, monkeypatch):
         artifacts = [a.path for a in client.list_artifacts(r.info.run_id)]
         assert "feature_names.json" in artifacts
         assert "model" in artifacts
+
+    # Kiểm tra alias "baseline" cho cả 2 model trong Model Registry
+    for name in ("logreg_baseline", "dt_baseline"):
+        model_version = client.get_model_version_by_alias(name, "baseline")
+        assert model_version is not None
+        assert "baseline" in model_version.aliases

@@ -46,7 +46,6 @@ REPORT_METRICS: List[str] = [
 ]
 
 N_SPLITS = 5
-MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
 
 
 def get_baseline_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
@@ -161,8 +160,6 @@ def train_baseline() -> None:
     setup_mlflow()
     train_df, _, _ = load_split_data()
     X, y = build_features(train_df, target_col=target_col)
-
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
     logger.info("Train size: %d samples, %d features", len(X), X.shape[1])
 

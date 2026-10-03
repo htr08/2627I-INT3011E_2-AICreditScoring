@@ -115,10 +115,6 @@ Train size: 18000 samples, 23 features
 > import mlflow
 > model = mlflow.sklearn.load_model("models:/logreg_baseline@baseline")
 > ```
-> Hoặc chạy thử kịch bản mẫu:
-> ```bash
-> python scripts/test_model.py
-> ```
 
 ---
 
