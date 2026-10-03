@@ -4,8 +4,6 @@ Task: Sep 28 + Sep 29 (CoReach) — Baseline CV + Log toàn bộ vào MLflow.
 
 Chạy chính thức:
     python scripts/run_pipeline.py
-Hoặc:
-    python -m src.train
 """
 
 import hashlib
@@ -17,6 +15,7 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
 from sklearn.base import BaseEstimator, clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
@@ -58,10 +57,6 @@ def get_baseline_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
     }
 
 
-# Backwards compatibility
-MODELS: Dict[str, BaseEstimator] = get_baseline_models(42)
-
-
 def get_data_version_tags() -> Dict[str, str]:
     """Lấy checksum dataset hoặc hash splits.json để log vào tag MLflow."""
     tags: Dict[str, str] = {}
@@ -79,6 +74,17 @@ def get_data_version_tags() -> Dict[str, str]:
         tags["splits_file"] = "data/splits/splits.json"
 
     return tags
+
+
+def get_cv_splitter(
+    random_state: Optional[int] = None,
+    n_splits: int = N_SPLITS,
+) -> StratifiedKFold:
+    """Tạo bộ chia fold StratifiedKFold cho cross-validation."""
+    if random_state is None:
+        cfg = load_config()
+        random_state = cfg.get("random_state", 42)
+    return StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
 
 def run_cv(
@@ -101,11 +107,7 @@ def run_cv(
         List[Dict]: Mỗi phần tử là dict metrics của 1 fold (có thêm key "fold").
                     Chỉ chứa các key trong REPORT_METRICS (+ "fold").
     """
-    if random_state is None:
-        cfg = load_config()
-        random_state = cfg.get("random_state", 42)
-
-    skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+    skf = get_cv_splitter(random_state=random_state, n_splits=n_splits)
     fold_metrics = []
 
     for fold, (train_idx, val_idx) in enumerate(skf.split(X, y), start=1):
@@ -131,6 +133,25 @@ def run_cv(
     return fold_metrics
 
 
+def summarize_folds(fold_metrics: List[Dict]) -> Dict[str, tuple]:
+    """Tổng hợp mean/std (ddof=1) từ danh sách metrics các fold.
+
+    Args:
+        fold_metrics: List[Dict] trả về từ run_cv.
+
+    Returns:
+        Dict mapping metric_name -> (mean, std) đã round 6 chữ số.
+    """
+    keys = [k for k in fold_metrics[0] if k != "fold"]
+    return {
+        k: (
+            round(float(np.mean([m[k] for m in fold_metrics])), 6),
+            round(float(np.std([m[k] for m in fold_metrics], ddof=1)), 6),
+        )
+        for k in keys
+    }
+
+
 def train_baseline() -> None:
     """Huấn luyện LR và DT với 5-fold CV, log kết quả có chọn lọc vào MLflow."""
     cfg = load_config()
@@ -154,15 +175,7 @@ def train_baseline() -> None:
         pipe = make_pipeline(clone(estimator))
         fold_metrics = run_cv(pipe, X, y, n_splits=N_SPLITS, random_state=random_state)
 
-        # Tổng hợp mean/std — dùng ddof=1 (std mẫu) phù hợp khi báo cáo "± std" với 5 fold.
-        keys = [k for k in fold_metrics[0] if k != "fold"]
-        summary = {
-            k: (
-                round(float(np.mean([m[k] for m in fold_metrics])), 6),
-                round(float(np.std([m[k] for m in fold_metrics], ddof=1)), 6),
-            )
-            for k in keys
-        }
+        summary = summarize_folds(fold_metrics)
 
         with mlflow.start_run(run_name=run_name):
             # 1. Params
@@ -207,13 +220,19 @@ def train_baseline() -> None:
             )
 
             # 5. Model artifact — fit lại toàn bộ train set, thêm signature để MLflow biết input schema.
-            # Không đăng ký vào Model Registry — baseline không cần versioning tự động.
+            # Giữ registered_model_name và gán alias "baseline".
             pipe.fit(X, y)
             signature = infer_signature(X, pipe.predict_proba(X))
-            mlflow.sklearn.log_model(
+            model_info = mlflow.sklearn.log_model(
                 sk_model=pipe,
                 artifact_path="model",
                 signature=signature,
+                registered_model_name=run_name,
+            )
+            MlflowClient().set_registered_model_alias(
+                name=run_name,
+                alias="baseline",
+                version=model_info.registered_model_version,
             )
 
         logger.info(
@@ -231,12 +250,3 @@ def train_baseline() -> None:
             summary["gini"][0],
             summary["gini"][1],
         )
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%H:%M:%S",
-    )
-    train_baseline()

@@ -113,9 +113,9 @@ Train size: 18000 samples, 23 features
 > ℹ️ `mlruns/` bị gitignore — **mỗi người cần tự chạy lại** bước này trên máy của mình để có runs local. Không cần file `run_registry.json`. Để load model đã train:
 > ```python
 > import mlflow
-> model = mlflow.sklearn.load_model("runs:/<run_id>/model")
+> model = mlflow.sklearn.load_model("models:/logreg_baseline@baseline")
 > ```
-> Lấy `run_id` từ MLflow UI (bước tiếp theo) hoặc chạy thử kịch bản mẫu:
+> Hoặc chạy thử kịch bản mẫu:
 > ```bash
 > python scripts/test_model.py
 > ```

@@ -15,12 +15,13 @@ Theo phản hồi review PR #16:
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.tree import DecisionTreeClassifier
 
 from src.features import build_features, make_pipeline
-from src.train import REPORT_METRICS, run_cv, train_baseline
+from src.train import REPORT_METRICS, get_cv_splitter, run_cv, summarize_folds, train_baseline
 
 
 @pytest.fixture
@@ -69,15 +70,19 @@ def test_build_features_drops_id_and_target_and_raises_keyerror(dummy_train_df):
         build_features(df_missing_target)
 
 
-# 2. Parametrized CV tests cho cả 2 model
-@pytest.mark.parametrize(
-    "estimator",
-    [
+# 2. Fixture và CV tests cho cả 2 model
+@pytest.fixture(
+    params=[
         LogisticRegression(max_iter=300, random_state=42),
         DecisionTreeClassifier(max_depth=5, random_state=42),
     ],
     ids=["logreg", "decision_tree"],
 )
+def estimator(request):
+    """Fixture cung cấp instance mới (clone) cho từng model và từng test."""
+    return clone(request.param)
+
+
 def test_run_cv_returns_5_folds(dummy_train_df, estimator):
     """Số fold trả về phải đúng với n_splits."""
     X, y = build_features(dummy_train_df)
@@ -86,14 +91,6 @@ def test_run_cv_returns_5_folds(dummy_train_df, estimator):
     assert len(metrics) == 5
 
 
-@pytest.mark.parametrize(
-    "estimator",
-    [
-        LogisticRegression(max_iter=300, random_state=42),
-        DecisionTreeClassifier(max_depth=5, random_state=42),
-    ],
-    ids=["logreg", "decision_tree"],
-)
 def test_run_cv_only_report_metrics_whitelist(dummy_train_df, estimator):
     """Mỗi fold chỉ chứa whitelist REPORT_METRICS (+ 'fold').
 
@@ -112,14 +109,6 @@ def test_run_cv_only_report_metrics_whitelist(dummy_train_df, estimator):
         assert "threshold" not in m
 
 
-@pytest.mark.parametrize(
-    "estimator",
-    [
-        LogisticRegression(max_iter=300, random_state=42),
-        DecisionTreeClassifier(max_depth=5, random_state=42),
-    ],
-    ids=["logreg", "decision_tree"],
-)
 def test_run_cv_auc_signal(dummy_train_df, estimator):
     """Nhãn có tín hiệu (phụ thuộc PAY_1) nên AUC phải đạt > 0.6 ở mọi fold."""
     X, y = build_features(dummy_train_df)
@@ -129,14 +118,6 @@ def test_run_cv_auc_signal(dummy_train_df, estimator):
         assert m["roc_auc"] > 0.6, f"Fold {m.get('fold')} có AUC quá thấp: {m['roc_auc']}"
 
 
-@pytest.mark.parametrize(
-    "estimator",
-    [
-        LogisticRegression(max_iter=300, random_state=42),
-        DecisionTreeClassifier(max_depth=5, random_state=42),
-    ],
-    ids=["logreg", "decision_tree"],
-)
 def test_run_cv_required_metrics_present(dummy_train_df, estimator):
     """Các metrics chính trong credit scoring phải có mặt đầy đủ."""
     X, y = build_features(dummy_train_df)
@@ -152,7 +133,8 @@ def test_stratified_folds_default_rate(dummy_train_df):
     """Tỷ lệ default ở mỗi fold phải xấp xỉ tỷ lệ default của toàn bộ dữ liệu."""
     X, y = build_features(dummy_train_df)
     total_default_rate = float(y.mean())
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    skf = get_cv_splitter(random_state=42)
+    assert isinstance(skf, StratifiedKFold)
 
     for _, val_idx in skf.split(X, y):
         fold_default_rate = float(y.iloc[val_idx].mean())
@@ -178,17 +160,23 @@ def test_run_cv_determinism(dummy_train_df):
                 assert m1[key] == pytest.approx(m2[key], abs=1e-7)
 
 
-# 5. Test std mẫu (ddof=1)
-def test_run_cv_std_ddof1(dummy_train_df):
-    """Kiểm tra std tính với ddof=1 (std mẫu) không âm và đúng logic ddof=1 >= ddof=0."""
-    X, y = build_features(dummy_train_df)
-    pipe = make_pipeline(LogisticRegression(max_iter=300, random_state=42))
-    fold_metrics = run_cv(pipe, X, y, n_splits=5)
-
-    auc_values = [m["roc_auc"] for m in fold_metrics]
-    std_ddof0 = float(np.std(auc_values, ddof=0))
-    std_ddof1 = float(np.std(auc_values, ddof=1))
-    assert std_ddof1 >= std_ddof0 >= 0.0
+# 5. Test std mẫu (ddof=1) — kiểm tra summarize_folds dùng ddof=1 thật sự
+def test_summarize_folds_uses_ddof1():
+    """summarize_folds phải tính std với ddof=1 (std mẫu), kiểm tra bằng dữ liệu cố định."""
+    # 3 fold giả với giá trị đã biết trước
+    fake_folds = [
+        {"roc_auc": 0.7, "fold": 1},
+        {"roc_auc": 0.8, "fold": 2},
+        {"roc_auc": 0.9, "fold": 3},
+    ]
+    summary = summarize_folds(fake_folds)
+    expected_mean = round(float(np.mean([0.7, 0.8, 0.9])), 6)
+    expected_std = round(float(np.std([0.7, 0.8, 0.9], ddof=1)), 6)
+    assert summary["roc_auc"][0] == pytest.approx(expected_mean, abs=1e-6)
+    assert summary["roc_auc"][1] == pytest.approx(expected_std, abs=1e-6)
+    # ddof=1 phải cho std lớn hơn ddof=0
+    std_ddof0 = round(float(np.std([0.7, 0.8, 0.9], ddof=0)), 6)
+    assert summary["roc_auc"][1] > std_ddof0
 
 
 # 6. Test train_baseline tích hợp MLflow với tmp_path
