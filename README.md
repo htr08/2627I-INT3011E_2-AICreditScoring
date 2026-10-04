@@ -10,6 +10,27 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+## Hướng dẫn chạy nhanh (Quickstart)
+
+Xem tài liệu chi tiết từng bước tại [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md).
+
+```bash
+# 1. Tải dữ liệu (nếu chưa có data/raw/UCI_Credit_Card.csv)
+python scripts/download_data.py
+
+# 2. Phân chia dữ liệu (nếu chưa có data/splits/splits.json)
+python scripts/split_data.py
+
+# 3. Huấn luyện baseline models (LR & DT 5-fold CV + MLflow log)
+python scripts/run_pipeline.py
+
+# 4. Xem kết quả thí nghiệm
+mlflow ui --backend-store-uri ./mlruns
+
+# 5. Chạy unit tests
+pytest
+```
+
 ## Theo dõi thí nghiệm với MLflow
 
 Cấu hình nằm trong `configs/config.yaml` (mục `mlflow`). Mặc định log vào thư mục `mlruns/` ở gốc repo (đã gitignore),
