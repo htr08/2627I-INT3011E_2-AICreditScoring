@@ -30,12 +30,41 @@ Mô hình cuối vượt baseline Logistic Regression về ROC-AUC với khác b
 - Bootstrap 95% CI của chênh lệch AUC không chứa 0, **hoặc**
 - DeLong test p < 0.05.
 
+Baseline Logistic Regression là run `logreg_baseline` (alias `baseline` trong MLflow Model Registry). Baseline này chưa encode PAY_*, EDUCATION, MARRIAGE (Option A) nên khá yếu — Decision Tree baseline đã vượt 0.023 AUC. Vì vậy KPI chính chỉ là điều kiện cần; mốc sàn ở mục 3.2 dùng để xác nhận mô hình cuối vượt cả baseline mạnh nhất.
+
 ### 3.2. KPI tham chiếu (tuyệt đối)
 
-- ROC-AUC ≥ 0.77 (tương đương Gini ≥ 0.54)
-- KS ≥ 0.35 trên tập Test
+> Điều chỉnh tại Tuần 1 theo kết quả baseline thực tế (PR #16). Mức cũ: ROC-AUC ≥ 0.77 (Gini ≥ 0.54), KS ≥ 0.35.
 
-> Đây là mức gần trần của bộ dữ liệu, sẽ được điều chỉnh lại sau khi có kết quả baseline Tuần 1.
+**Baseline thực tế** — 5-fold Stratified CV trên Train (18.000 mẫu, 23 đặc trưng, Option A, tỷ lệ vỡ nợ 22.1%), mean ± std (ddof=1):
+
+| Mô hình | ROC-AUC | Gini | KS | PR-AUC | Brier (chưa calib.) |
+|---|---|---|---|---|---|
+| Logistic Regression (`logreg_baseline`) | 0.7278 ± 0.0130 | 0.4557 ± 0.0261 | 0.3907 ± 0.0261 | 0.5109 ± 0.0106 | 0.1439 ± 0.0019 |
+| Decision Tree, max_depth=5 (`dt_baseline`) | 0.7506 ± 0.0107 | 0.5011 ± 0.0215 | 0.4136 ± 0.0216 | 0.5088 ± 0.0137 | 0.1372 ± 0.0026 |
+
+**Mốc tham chiếu mới** (đo trên tập Test):
+
+| Chỉ số | Mốc sàn | Mốc mục tiêu |
+|---|---|---|
+| ROC-AUC | ≥ 0.76 | ≥ 0.77 |
+| Gini | ≥ 0.52 | ≥ 0.54 |
+| KS | ≥ 0.43 | ≥ 0.45 |
+| PR-AUC | ≥ 0.52 | ≥ 0.53 |
+
+Cách xác định: mốc sàn = giá trị baseline tốt nhất của từng chỉ số + 1 std CV; mốc mục tiêu = + 2 std; làm tròn xuống 2 chữ số thập phân.
+
+Lý do điều chỉnh:
+
+- **KS:** mức cũ 0.35 thấp hơn cả LR baseline (0.39) nên không còn phân biệt được mô hình tốt/kém → nâng lên 0.43 / 0.45.
+- **ROC-AUC:** giữ 0.77 làm mốc mục tiêu (cao hơn DT baseline ≈ 1.8 std, cao hơn LR baseline 0.042). Bổ sung mốc sàn 0.76 để có một mức "chắc chắn vượt baseline tốt nhất", thay vì chỉ một con số gần trần.
+- **PR-AUC (bổ sung):** dữ liệu mất cân bằng; hai baseline gần như bằng nhau ở PR-AUC (~0.51) dù ROC-AUC chênh 0.023, nên cần theo dõi riêng.
+
+Lưu ý:
+
+- Mốc được suy ra từ CV trên Train nhưng áp dụng trên Test (chỉ chạy 1 lần ở Tuần 3). Chênh lệch CV–Test cỡ 1 std là bình thường, vì vậy luôn báo cáo kèm 95% CI bootstrap.
+- Baseline Option A vẫn dùng SEX và AGE liên tục (chưa theo mục 8). Chạy lại baseline bỏ SEX: ROC-AUC LR 0.7273, DT 0.7502 (giảm ≤ 0.0005) → không cần đổi mốc.
+- KPI tham chiếu vẫn chỉ là mốc so sánh, không bắt buộc (xem mục 4).
 
 ## 4. Definition of Done (DoD)
 
