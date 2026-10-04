@@ -22,7 +22,7 @@ Xây dựng pipeline dự đoán xác suất vỡ nợ (PD) đã được hiệu
 Project Charter được chốt tại Tuần 1 – T2, gồm các nội dung sau:
 
 - **KPI chính (tương đối):** Mô hình cuối vượt baseline Logistic Regression về ROC-AUC với khác biệt có ý nghĩa thống kê (bootstrap 95% CI của chênh lệch AUC không chứa 0, hoặc DeLong test p < 0.05).
-- **KPI tham chiếu (tuyệt đối):** ROC-AUC ≥ 0.77 (tương đương Gini ≥ 0.54) và KS ≥ 0.35 trên tập Test. Đây là mức gần trần của bộ dữ liệu, nên được điều chỉnh sau khi có baseline Tuần 1.
+- **KPI tham chiếu (tuyệt đối, đã điều chỉnh Tuần 1 – T6 theo baseline thực tế):** đo trên tập Test, gồm mốc sàn / mốc mục tiêu: ROC-AUC ≥ 0.76 / 0.77, Gini ≥ 0.52 / 0.54, KS ≥ 0.43 / 0.45, PR-AUC ≥ 0.52 / 0.53. Mốc = baseline tốt nhất (5-fold CV trên Train: LR AUC 0.7278 ± 0.0130, DT AUC 0.7506 ± 0.0107) cộng 1 std / 2 std. Chi tiết và lý do: mục 3.2 trong [project_charter.md](project_charter.md).
 - **Điều kiện dừng tuning:** Dừng khi Optuna không cải thiện CV ROC-AUC quá 0.002 sau 30 trial liên tiếp, hoặc hết ngân sách thời gian (tối đa 2 giờ tính toán cho mỗi mô hình).
 - **Ma trận chi phí (chốt từ Tuần 1):** Chi phí FN (bỏ sót khách sắp vỡ nợ, không kịp can thiệp) ≈ LGD × EAD (giả định LGD = 0.45, EAD = dư nợ sao kê gần nhất); chi phí FP (giảm hạn mức/cảnh báo oan một khách hàng tốt) ≈ lãi và phí bị mất do giảm hạn mức (giả định 5% × EAD). Báo cáo kèm phân tích độ nhạy với tỷ lệ chi phí FN:FP trong khoảng 3:1 đến 10:1.
 - **Chính sách biến nhạy cảm:** SEX không được dùng trong mô hình chính thức. AGE được phép dùng dưới dạng binning. Huấn luyện thêm một phiên bản có SEX để đối chiếu hiệu năng và fairness.
