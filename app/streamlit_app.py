@@ -37,6 +37,14 @@ SCORE_DISPLAY_RANGE = (420, 640)
 
 @st.cache_resource
 def load_model():
+    """Tải mô hình: ưu tiên BaselineModel nếu có model registry/artifact, fallback sang MockModel."""
+    try:
+        from app.baseline_model import load_baseline_model
+        model = load_baseline_model()
+        if model is not None:
+            return model
+    except Exception:
+        pass
     return MockModel()
 
 
