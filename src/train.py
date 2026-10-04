@@ -56,6 +56,21 @@ def get_baseline_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
     }
 
 
+def get_advanced_default_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
+    """Factory tạo dictionary mô hình nâng cao với tham số mặc định (Tuần 2 - T2: Member B)."""
+    from sklearn.ensemble import RandomForestClassifier
+    from xgboost import XGBClassifier
+
+    return {
+        "rf_default": RandomForestClassifier(random_state=random_state, n_jobs=-1),
+        "xgboost_default": XGBClassifier(
+            random_state=random_state,
+            eval_metric="logloss",
+            n_jobs=-1,
+        ),
+    }
+
+
 def get_data_version_tags() -> Dict[str, str]:
     """Lấy checksum dataset hoặc hash splits.json để log vào tag MLflow."""
     tags: Dict[str, str] = {}
@@ -229,6 +244,97 @@ def train_baseline() -> None:
             MlflowClient().set_registered_model_alias(
                 name=run_name,
                 alias="baseline",
+                version=model_info.registered_model_version,
+            )
+
+        logger.info(
+            "  → AUC: %.4f ± %.4f",
+            summary["roc_auc"][0],
+            summary["roc_auc"][1],
+        )
+        logger.info(
+            "  → KS:  %.4f ± %.4f",
+            summary["ks"][0],
+            summary["ks"][1],
+        )
+        logger.info(
+            "  → Gini:%.4f ± %.4f\n",
+            summary["gini"][0],
+            summary["gini"][1],
+        )
+
+
+def train_rf_xgboost_default() -> None:
+    """Huấn luyện Random Forest và XGBoost với tham số mặc định (Tuần 2 - T2: Member B)."""
+    cfg = load_config()
+    random_state = cfg.get("random_state", 42)
+    target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
+
+    setup_mlflow()
+    train_df, _, _ = load_split_data()
+    X, y = build_features(train_df, target_col=target_col)
+
+    logger.info("Train size: %d samples, %d features", len(X), X.shape[1])
+
+    models = get_advanced_default_models(random_state=random_state)
+    data_tags = get_data_version_tags()
+
+    for run_name, estimator in models.items():
+        logger.info("=== %s ===", run_name)
+        pipe = make_pipeline(clone(estimator))
+        fold_metrics = run_cv(pipe, X, y, n_splits=N_SPLITS, random_state=random_state)
+
+        summary = summarize_folds(fold_metrics)
+
+        with mlflow.start_run(run_name=run_name):
+            # 1. Params
+            mlflow.log_param("model", run_name)
+            mlflow.log_param("n_splits", N_SPLITS)
+            mlflow.log_param("n_features", X.shape[1])
+            mlflow.log_params(clone(estimator).get_params())
+
+            # 2. Metrics — mean & std (whitelist REPORT_METRICS)
+            for metric, (mean, std) in summary.items():
+                mlflow.log_metric(f"{metric}_mean", mean)
+                mlflow.log_metric(f"{metric}_std", std)
+
+            # 3. Per-fold metrics
+            for m in fold_metrics:
+                fold = m["fold"]
+                for k, v in m.items():
+                    if k != "fold":
+                        mlflow.log_metric(f"{k}_fold", v, step=fold)
+
+            # 4. Dataset tags
+            tags = {
+                "train_size": len(X),
+                "default_rate": round(float(y.mean()), 4),
+                "feature_strategy": "option_a_all_features",
+                "random_state": random_state,
+                "target_col": target_col,
+                "task": "rf_xgboost_default_cv",
+                "threshold_note": "fixed at 0.5, imbalanced data (22% default)",
+            }
+            tags.update(data_tags)
+            mlflow.set_tags(tags)
+
+            mlflow.log_dict(
+                {"feature_names": X.columns.tolist()},
+                artifact_file="feature_names.json",
+            )
+
+            # 5. Model artifact & alias
+            pipe.fit(X, y)
+            signature = infer_signature(X, pipe.predict_proba(X))
+            model_info = mlflow.sklearn.log_model(
+                sk_model=pipe,
+                artifact_path="model",
+                signature=signature,
+                registered_model_name=run_name,
+            )
+            MlflowClient().set_registered_model_alias(
+                name=run_name,
+                alias="default",
                 version=model_info.registered_model_version,
             )
 
