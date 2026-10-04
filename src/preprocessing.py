@@ -1,5 +1,4 @@
 import pandas as pd
-
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LogisticRegression
@@ -8,12 +7,11 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from src.features import (
     AgeBinningTransformer,
-    WoEIVTransformer
+    WoEIVTransformer,
 )
 
-
+# Danh sách biến phân loại cho mô hình chính thức (không bao gồm SEX theo Charter mục 1.3 & 8)
 CATEGORICAL_COLUMNS = [
-    "SEX",
     "EDUCATION",
     "MARRIAGE",
     "PAY_1",
@@ -23,6 +21,12 @@ CATEGORICAL_COLUMNS = [
     "PAY_5",
     "PAY_6",
 ]
+
+# Danh sách biến phân loại đầy đủ (bao gồm SEX cho mô hình đối chiếu fairness)
+CATEGORICAL_COLUMNS_WITH_SEX = ["SEX"] + CATEGORICAL_COLUMNS
+
+# Các cột nhạy cảm / không phải đặc trưng dự đoán
+SENSITIVE_COLUMNS = ["SEX", "ID"]
 
 NUMERIC_COLUMNS = [
     "LIMIT_BAL",
@@ -43,48 +47,40 @@ NUMERIC_COLUMNS = [
 
 
 class AbnormalCodeTransformer(BaseEstimator, TransformerMixin):
+    """Xử lý các mã không được tài liệu hóa và chuẩn hóa tên cột theo project_plan.md mục 3.1:
+    - PAY_0 -> PAY_1 (thống nhất chuỗi tháng 1..6)
+    - EDUCATION: 0, 5, 6 -> 4 ('Khác')
+    - MARRIAGE: 0 -> 3 ('Khác')
+    """
+
     def fit(self, X, y=None):
         return self
 
     def transform(self, X):
         X = X.copy()
 
-        if "PAY_0" in X.columns:
+        # Đổi tên PAY_0 -> PAY_1 nếu có
+        if "PAY_0" in X.columns and "PAY_1" not in X.columns:
             X = X.rename(columns={"PAY_0": "PAY_1"})
 
+        # Merge mã EDUCATION bất thường vào mã 4 ("Khác")
         if "EDUCATION" in X.columns:
             X["EDUCATION"] = X["EDUCATION"].replace({
                 0: 4,
                 5: 4,
-                6: 4
+                6: 4,
             })
+
+        # Merge mã MARRIAGE 0 vào mã 3 ("Khác")
+        if "MARRIAGE" in X.columns:
+            X["MARRIAGE"] = X["MARRIAGE"].replace({0: 3})
 
         return X
 
 
-def build_preprocessing_pipeline():
-    categorical_pipeline = Pipeline([
-        ("encoder", OneHotEncoder(handle_unknown="ignore"))
-    ])
-
-    numeric_pipeline = Pipeline([
-        ("scaler", StandardScaler())
-    ])
-
-    preprocessor = ColumnTransformer([
-        ("categorical", categorical_pipeline, CATEGORICAL_COLUMNS),
-        ("numeric", numeric_pipeline, NUMERIC_COLUMNS)
-    ])
-
-    pipeline = Pipeline([
-        ("abnormal_codes", AbnormalCodeTransformer()),
-        ("preprocessor", preprocessor)
-    ])
-
-    return pipeline
-
-
 class DropColumnsTransformer(BaseEstimator, TransformerMixin):
+    """Transformer loại bỏ các cột chỉ định (ví dụ SEX, ID)."""
+
     def __init__(self, columns=None):
         self.columns = columns or []
 
@@ -93,39 +89,47 @@ class DropColumnsTransformer(BaseEstimator, TransformerMixin):
 
     def transform(self, X):
         X = X.copy()
+        return X.drop(columns=self.columns, errors="ignore")
 
-        return X.drop(
-            columns=self.columns,
-            errors="ignore"
-        )
+
+def build_preprocessing_pipeline(drop_sensitive: bool = True):
+    """Xây dựng pipeline tiền xử lý.
+
+    Args:
+        drop_sensitive: Nếu True, loại bỏ SEX và ID (mô hình chính thức).
+                        Nếu False, giữ SEX để đối chiếu fairness (Charter mục 1.3).
+    """
+    cat_cols = CATEGORICAL_COLUMNS if drop_sensitive else CATEGORICAL_COLUMNS_WITH_SEX
+
+    categorical_pipeline = Pipeline([
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+    ])
+
+    numeric_pipeline = Pipeline([
+        ("scaler", StandardScaler())
+    ])
+
+    preprocessor = ColumnTransformer(
+        [
+            ("categorical", categorical_pipeline, cat_cols),
+            ("numeric", numeric_pipeline, NUMERIC_COLUMNS),
+        ],
+        remainder="drop",
+    )
+
+    steps = [("abnormal_codes", AbnormalCodeTransformer())]
+    if drop_sensitive:
+        steps.append(("drop_sensitive", DropColumnsTransformer(columns=SENSITIVE_COLUMNS)))
+    steps.append(("preprocessor", preprocessor))
+
+    return Pipeline(steps)
 
 
 def build_scorecard_pipeline():
+    """Xây dựng pipeline Logistic Scorecard (WoE) theo kế hoạch Tuần 2 - T3 / T5."""
     return Pipeline([
-        (
-            "drop_sensitive",
-            DropColumnsTransformer(
-                columns=["SEX", "ID"]
-            )
-        ),
-        (
-            "age_binning",
-            AgeBinningTransformer(
-                min_bins=3,
-                max_bins=8
-            )
-        ),
-        (
-            "woe_iv",
-            WoEIVTransformer(
-                n_bins=5,
-                iv_threshold=0.02
-            )
-        ),
-        (
-            "model",
-            LogisticRegression(
-                max_iter=1000
-            )
-        )
+        ("drop_sensitive", DropColumnsTransformer(columns=["SEX", "ID"])),
+        ("age_binning", AgeBinningTransformer(min_bins=3, max_bins=8)),
+        ("woe_iv", WoEIVTransformer(n_bins=5, iv_threshold=0.02)),
+        ("model", LogisticRegression(max_iter=1000)),
     ])
