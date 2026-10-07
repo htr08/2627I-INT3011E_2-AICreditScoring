@@ -1,7 +1,10 @@
 """Pipeline runner for model training and feature evaluation.
 
 Usage:
-    python scripts/run_pipeline.py              # Huấn luyện baseline models (LR & DT)
+    python scripts/run_pipeline.py                    # Huấn luyện baseline models (LR & DT)
+    python scripts/run_pipeline.py --mode advanced    # Huấn luyện RF & XGBoost (tham số mặc định)
+    python scripts/run_pipeline.py --mode all         # Cả baseline và advanced
+    python scripts/run_pipeline.py --include-sex      # Bản đối chiếu fairness (có SEX, không đăng ký model)
     python scripts/run_pipeline.py --mode woe    # Báo cáo WoE/IV trên Train
     python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
 """
@@ -30,7 +33,7 @@ from src.pipelines import (
     build_scorecard_pipeline,
 )
 from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, SENSITIVE_COLUMNS
-from src.train import train_baseline
+from src.train import train_baseline, train_rf_xgboost_default
 
 FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
@@ -93,9 +96,14 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "woe"],
+        choices=["baseline", "advanced", "all", "woe"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default) or 'woe'",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'all' or 'woe'",
+    )
+    parser.add_argument(
+        "--include-sex",
+        action="store_true",
+        help="Giữ SEX để đối chiếu fairness; run có hậu tố _with_sex và không đăng ký model",
     )
     parser.add_argument(
         "--freeze",
@@ -113,7 +121,10 @@ def main():
     if args.mode == "woe":
         run_woe_pipeline(write_freeze=args.freeze)
     else:
-        train_baseline()
+        if args.mode in ("baseline", "all"):
+            train_baseline(include_sex=args.include_sex)
+        if args.mode in ("advanced", "all"):
+            train_rf_xgboost_default(include_sex=args.include_sex)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 """Module xây dựng đặc trưng cho Credit Scoring.
 
 Bao gồm:
-- Baseline: build_features() tách X, y và make_pipeline() chuẩn hóa.
+- build_features() tách X, y (Pipeline mô hình nằm ở src.pipelines.make_pipeline).
 - Tuần 2 - T2 (Feature Engineering):
     - create_utilization_features: tỷ lệ sử dụng hạn mức (UTIL_1..6, UTIL_MEAN)
     - create_payment_trend_features: xu hướng trễ hạn (PAY_MEAN, PAY_MAX, PAY_SLOPE, PAY_LATE_CONSECUTIVE, PAY_LATE_2PLUS_COUNT)
@@ -20,8 +20,6 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 from src.config import load_config
 
@@ -42,13 +40,15 @@ def build_features(
     df: pd.DataFrame,
     target_col: Optional[str] = None,
     drop_cols: Optional[List[str]] = None,
+    include_sex: bool = False,
 ) -> Tuple[pd.DataFrame, pd.Series]:
-    """Tách X và y từ DataFrame thô (Option A: dùng toàn bộ features trừ ID).
+    """Tách X và y từ DataFrame thô (cột gốc; tiền xử lý nằm trong src.pipelines.make_pipeline).
 
     Args:
         df: DataFrame đã được lọc theo split (train / valid / test).
         target_col: Tên cột nhãn (nếu None sẽ đọc từ config data.target_col).
         drop_cols: Danh sách cột bổ sung cần bỏ (mặc định: ["ID"]).
+        include_sex: Nếu False (mô hình chính thức) bỏ SEX; True để đối chiếu fairness.
 
     Returns:
         (X, y): DataFrame đặc trưng và Series nhãn nhị phân (int).
@@ -60,6 +60,8 @@ def build_features(
         target_col = TARGET_COL
     if drop_cols is None:
         drop_cols = DROP_COLS
+    if not include_sex:
+        drop_cols = list(drop_cols) + ["SEX"]
 
     if target_col not in df.columns:
         raise KeyError(f"Không tìm thấy cột nhãn '{target_col}' trong DataFrame.")
@@ -68,23 +70,6 @@ def build_features(
     X = df.drop(columns=cols_to_drop)
     y = df[target_col].astype(int)
     return X, y
-
-
-def make_pipeline(estimator) -> Pipeline:
-    """Tạo Pipeline: StandardScaler → estimator.
-
-    Scaler chỉ fit trên train, transform trên valid/test — tránh data leakage.
-
-    Args:
-        estimator: Scikit-learn estimator (LogisticRegression, DecisionTreeClassifier, …).
-
-    Returns:
-        sklearn.pipeline.Pipeline sẵn sàng gọi .fit() / .predict_proba().
-    """
-    return Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", estimator),
-    ])
 
 
 # Create credit utilization features from monthly bill amounts.
