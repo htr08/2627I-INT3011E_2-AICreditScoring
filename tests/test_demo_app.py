@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import streamlit as st
 from streamlit.testing.v1 import AppTest
 
 from app.mock_model import FEATURE_GROUPS, MockModel
@@ -28,7 +29,16 @@ def test_recent_delay_increases_pd():
     assert model.explain(record).pd > before
 
 
-def test_app_runs_and_scores_profiles():
+@pytest.fixture(autouse=True)
+def clear_model_cache():
+    # load_model() dùng st.cache_resource, cache sống qua các lần chạy AppTest trong cùng process.
+    st.cache_resource.clear()
+    yield
+    st.cache_resource.clear()
+
+
+def test_app_runs_and_scores_profiles(monkeypatch):
+    monkeypatch.setenv("DEMO_MODEL", "mock")
     at = AppTest.from_file("app/streamlit_app.py", default_timeout=30).run()
     assert not at.exception
     assert [m.label for m in at.metric] == ["Xác suất vỡ nợ (PD)", "Điểm tín dụng", "Mức cảnh báo"]
@@ -37,3 +47,13 @@ def test_app_runs_and_scores_profiles():
     at.sidebar.button[0].click().run()
     assert not at.exception
     assert at.metric[2].value == "🔴 Cảnh báo"
+
+
+def test_app_falls_back_to_mock_when_registry_is_empty(monkeypatch, tmp_path):
+    monkeypatch.delenv("DEMO_MODEL", raising=False)
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tmp_path.as_uri())
+    at = AppTest.from_file("app/streamlit_app.py", default_timeout=60).run()
+    assert not at.exception
+    assert "Không nạp được mô hình baseline" in at.sidebar.error[0].value
+    assert "mock model" in at.sidebar.warning[0].value
+    assert len(at.metric) == 3
