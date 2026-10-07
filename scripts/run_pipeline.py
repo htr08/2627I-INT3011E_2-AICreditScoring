@@ -2,13 +2,18 @@
 
 Usage:
     python scripts/run_pipeline.py              # Huấn luyện baseline models (LR & DT)
-    python scripts/run_pipeline.py --mode woe    # Chạy trích xuất đặc trưng và WoE/IV
+    python scripts/run_pipeline.py --mode woe    # Báo cáo WoE/IV trên Train
+    python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
 """
 
 import argparse
+import hashlib
 import logging
 import sys
+from datetime import date
 from pathlib import Path
+
+import yaml
 
 # Đảm bảo đường dẫn gốc dự án luôn có trong sys.path khi chạy script trực tiếp
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,57 +21,71 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.data_split import load_split_data
-from src.features import (
-    AgeBinningTransformer,
-    WoEIVTransformer,
-    create_bill_variation_features,
-    create_min_payment_features,
-    create_payment_ratio_features,
-    create_payment_trend_features,
-    create_utilization_features,
+from src.features import ENGINEERED_COLUMNS, build_features
+from src.pipelines import (
+    AGE_MAX_BINS,
+    AGE_MIN_BINS,
+    SCORECARD_IV_THRESHOLD,
+    SCORECARD_N_BINS,
+    build_scorecard_pipeline,
 )
-from src.preprocessing import AbnormalCodeTransformer
+from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, SENSITIVE_COLUMNS
 from src.train import train_baseline
 
+FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
-def run_woe_pipeline():
-    """Chạy trích xuất đặc trưng mới và phân tích WoE / IV."""
-    target_col = "default.payment.next.month"
-    train_df, valid_df, test_df = load_split_data()
 
-    print("Train:", train_df.shape)
-    print("Valid:", valid_df.shape)
-    print("Test :", test_df.shape)
+def run_woe_pipeline(write_freeze: bool = False):
+    """Fit scorecard pipeline trên toàn bộ Train để báo cáo IV (chỉ dùng xem báo cáo,
+    đánh giá mô hình phải chạy CV với cùng pipeline)."""
+    train_df, _, _ = load_split_data()
+    X_train, y_train = build_features(train_df)
+    print("Train:", X_train.shape)
 
-    normalizer = AbnormalCodeTransformer()
-    train_df = normalizer.fit_transform(train_df)
-    valid_df = normalizer.transform(valid_df)
-    test_df = normalizer.transform(test_df)
+    pipeline = build_scorecard_pipeline().fit(X_train, y_train)
+    woe = pipeline.named_steps["woe_iv"]
+    iv_sorted = sorted(woe.iv_values_.items(), key=lambda x: x[1], reverse=True)
 
-    train_df = create_utilization_features(train_df)
-    train_df = create_payment_trend_features(train_df)
-    train_df = create_payment_ratio_features(train_df)
-    train_df = create_bill_variation_features(train_df)
-    train_df = create_min_payment_features(train_df)
+    print("\nIV values (* = selected):")
+    for feature, iv in iv_sorted:
+        mark = "*" if feature in woe.selected_features_ else " "
+        print(f"  {mark} {feature}: {iv:.4f}")
 
-    X_train = train_df.drop(columns=[target_col])
-    y_train = train_df[target_col]
+    if write_freeze:
+        write_feature_freeze(iv_sorted, woe.selected_features_)
 
-    age_binning = AgeBinningTransformer(min_bins=3, max_bins=8)
-    X_train = age_binning.fit_transform(X_train, y_train)
 
-    transformer = WoEIVTransformer(n_bins=5, iv_threshold=0.02)
-    transformer.fit(X_train, y_train)
-
-    print("\nSelected features:")
-    for feature in transformer.selected_features_:
-        print(f"  - {feature}")
-
-    print("\nIV values:")
-    for feature, iv in sorted(
-        transformer.iv_values_.items(), key=lambda x: x[1], reverse=True
-    ):
-        print(f"  {feature}: {iv:.4f}")
+def write_feature_freeze(iv_sorted, selected):
+    """Ghi danh sách đặc trưng chốt (feature freeze v1) ra configs/feature_freeze_v1.yaml."""
+    splits_path = PROJECT_ROOT / "data" / "splits" / "splits.json"
+    splits_hash = (
+        hashlib.sha256(splits_path.read_bytes()).hexdigest()[:16] if splits_path.exists() else None
+    )
+    freeze = {
+        "version": "v1",
+        "frozen_on": date.today().isoformat(),
+        "splits_hash": splits_hash,
+        "excluded_columns": SENSITIVE_COLUMNS,
+        "model_features": {
+            "note": "Dùng cho LR/DT/RF/XGBoost qua src.preprocessing.build_preprocessing_pipeline",
+            "categorical": CATEGORICAL_COLUMNS,
+            "numeric_raw": NUMERIC_COLUMNS,
+            "numeric_engineered": ENGINEERED_COLUMNS,
+        },
+        "scorecard": {
+            "note": "Dùng cho src.pipelines.build_scorecard_pipeline; IV tính trên toàn bộ Train",
+            "n_bins": SCORECARD_N_BINS,
+            "age_bins": [AGE_MIN_BINS, AGE_MAX_BINS],
+            "iv_threshold": SCORECARD_IV_THRESHOLD,
+            "selected_features": list(selected),
+            "iv": {feature: round(float(iv), 4) for feature, iv in iv_sorted},
+        },
+    }
+    with open(FREEZE_PATH, "w", encoding="utf-8") as f:
+        f.write("# Feature freeze v1 - sinh tự động bởi: python scripts/run_pipeline.py --mode woe --freeze\n")
+        f.write("# Mọi thay đổi đặc trưng sau mốc này phải được cả nhóm thống nhất (project_plan.md).\n")
+        yaml.safe_dump(freeze, f, allow_unicode=True, sort_keys=False)
+    print(f"\nWrote {FREEZE_PATH.relative_to(PROJECT_ROOT)}")
 
 
 def main():
@@ -77,6 +96,11 @@ def main():
         default="baseline",
         help="Pipeline mode to run: 'baseline' (default) or 'woe'",
     )
+    parser.add_argument(
+        "--freeze",
+        action="store_true",
+        help="(mode woe) Ghi danh sách đặc trưng chốt ra configs/feature_freeze_v1.yaml",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -86,7 +110,7 @@ def main():
     )
 
     if args.mode == "woe":
-        run_woe_pipeline()
+        run_woe_pipeline(write_freeze=args.freeze)
     else:
         train_baseline()
 
