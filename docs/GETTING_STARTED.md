@@ -89,7 +89,7 @@ python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness 
 ```
 *(hoặc `python -m src.train`)*
 
-Mô hình dùng bộ đặc trưng **feature freeze v1** (`configs/feature_freeze_v1.yaml`) qua `src.pipelines.make_pipeline`: làm sạch mã (PAY_0 → PAY_1…) → đặc trưng T2 → bỏ SEX/ID → one-hot + impute/scale. Input là các cột gốc của CSV.
+Mô hình dùng bộ đặc trưng **feature freeze v1** (`configs/feature_freeze_v1.yaml`) qua `src.pipelines.make_pipeline`: làm sạch mã (PAY_0 → PAY_1…) → đặc trưng T2 → binning AGE theo IV → bỏ SEX/ID → one-hot + impute/scale. Input là các cột gốc của CSV.
 
 Quá trình:
 1. Đọc `data/raw/UCI_Credit_Card.csv` + `data/splits/splits.json`
@@ -102,17 +102,17 @@ Output terminal:
 Train size: 18000 samples, 22 input columns
 
 === logreg_baseline ===
-  Fold 1: AUC=0.7860  KS=0.4487  Gini=0.5720
+  Fold 1: AUC=0.7835  KS=0.4490  Gini=0.5670
   ...
-  → AUC: 0.7752 ± 0.0120
-  → KS:  0.4276 ± 0.0236
-  → Gini:0.5505 ± 0.0240
+  → AUC: 0.7745 ± 0.0116
+  → KS:  0.4282 ± 0.0231
+  → Gini:0.5490 ± 0.0233
 
 === dt_baseline ===
   ...
-  → AUC: 0.7665 ± 0.0117
-  → KS:  0.4163 ± 0.0185
-  → Gini:0.5330 ± 0.0235
+  → AUC: 0.7672 ± 0.0120
+  → KS:  0.4162 ± 0.0184
+  → Gini:0.5345 ± 0.0240
 ```
 
 > ℹ️ `mlruns/` bị gitignore — **mỗi người cần tự chạy lại** bước này trên máy của mình để có runs local. Không cần file `run_registry.json`. Để load model đã train:
