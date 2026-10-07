@@ -1,7 +1,7 @@
 """Module xây dựng đặc trưng cho Credit Scoring.
 
 Bao gồm:
-- Baseline: build_features() tách X, y và make_pipeline() chuẩn hóa.
+- build_features() tách X, y (Pipeline mô hình nằm ở src.pipelines.make_pipeline).
 - Tuần 2 - T2 (Feature Engineering):
     - create_utilization_features: tỷ lệ sử dụng hạn mức (UTIL_1..6, UTIL_MEAN)
     - create_payment_trend_features: xu hướng trễ hạn (PAY_MEAN, PAY_MAX, PAY_SLOPE, PAY_LATE_CONSECUTIVE, PAY_LATE_2PLUS_COUNT)
@@ -20,8 +20,6 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 from src.config import load_config
 
@@ -68,23 +66,6 @@ def build_features(
     X = df.drop(columns=cols_to_drop)
     y = df[target_col].astype(int)
     return X, y
-
-
-def make_pipeline(estimator) -> Pipeline:
-    """Tạo Pipeline: StandardScaler → estimator.
-
-    Scaler chỉ fit trên train, transform trên valid/test — tránh data leakage.
-
-    Args:
-        estimator: Scikit-learn estimator (LogisticRegression, DecisionTreeClassifier, …).
-
-    Returns:
-        sklearn.pipeline.Pipeline sẵn sàng gọi .fit() / .predict_proba().
-    """
-    return Pipeline([
-        ("scaler", StandardScaler()),
-        ("clf", estimator),
-    ])
 
 
 # Create credit utilization features from monthly bill amounts.

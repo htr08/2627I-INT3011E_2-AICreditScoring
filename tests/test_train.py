@@ -2,7 +2,7 @@
 
 Theo phản hồi review PR #16:
 - Fixture dùng np.random.default_rng(42) cục bộ thay vì np.random.seed()
-- Nhãn sinh có tương quan với PAY_1 và LIMIT_BAL để assert AUC > 0.6
+- Nhãn sinh có tương quan với PAY_0 và LIMIT_BAL (fixture đúng schema CSV gốc) để assert AUC > 0.6
 - Parametrize kiểm thử đồng thời cho LogisticRegression và DecisionTreeClassifier
 - Kiểm tra whitelist REPORT_METRICS: không lọt optimal_threshold hay min_expected_cost
 - Kiểm tra std mẫu (ddof=1)
@@ -13,45 +13,22 @@ Theo phản hồi review PR #16:
 """
 
 import numpy as np
-import pandas as pd
 import pytest
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.tree import DecisionTreeClassifier
 
-from src.features import build_features, make_pipeline
+from conftest import make_raw_credit_df
+from src.features import build_features
+from src.pipelines import make_pipeline
 from src.train import REPORT_METRICS, get_cv_splitter, run_cv, summarize_folds, train_baseline
 
 
 @pytest.fixture
 def dummy_train_df():
-    """500 mẫu với nhãn có tín hiệu mạnh từ PAY_1 và LIMIT_BAL để AUC > 0.6."""
-    rng = np.random.default_rng(42)
-    n = 500
-    limit_bal = rng.integers(10_000, 500_000, n)
-    pay_1 = rng.integers(-1, 9, n)
-    pay_2 = rng.integers(-1, 9, n)
-
-    # Tương quan dương mạnh với PAY_1, âm với LIMIT_BAL → AUC đạt > 0.6 ổn định
-    log_odds = -1.5 + 0.8 * pay_1 + 0.3 * pay_2 - 2.0 * (limit_bal / 500_000)
-    prob = 1.0 / (1.0 + np.exp(-log_odds))
-    labels = (rng.random(n) < prob).astype(int)
-
-    # Đảm bảo có cả hai class
-    if labels.sum() == 0:
-        labels[:50] = 1
-    elif labels.sum() == n:
-        labels[:50] = 0
-
-    data = {
-        "ID": np.arange(1, n + 1),
-        "LIMIT_BAL": limit_bal,
-        "PAY_1": pay_1,
-        "PAY_2": pay_2,
-        "default.payment.next.month": labels,
-    }
-    return pd.DataFrame(data)
+    """500 mẫu đúng schema CSV gốc (có PAY_0, SEX) với nhãn có tín hiệu từ PAY_0 và LIMIT_BAL."""
+    return make_raw_credit_df(n=500, seed=42)
 
 
 # 1. Test build_features
@@ -68,6 +45,17 @@ def test_build_features_drops_id_and_target_and_raises_keyerror(dummy_train_df):
     df_missing_target = dummy_train_df.drop(columns=["default.payment.next.month"])
     with pytest.raises(KeyError, match="Không tìm thấy cột nhãn"):
         build_features(df_missing_target)
+
+
+def test_make_pipeline_uses_preprocessing_on_raw_columns(dummy_train_df):
+    """make_pipeline nhận cột gốc (PAY_0), dùng tiền xử lý của preprocessing.py và encode thêm SEX khi bật."""
+    X, y = build_features(dummy_train_df)
+
+    pipe = make_pipeline(LogisticRegression(max_iter=300)).fit(X, y)
+    pipe_sex = make_pipeline(LogisticRegression(max_iter=300), include_sex=True).fit(X, y)
+
+    assert "preprocess" in pipe.named_steps
+    assert pipe_sex.named_steps["clf"].coef_.shape[1] > pipe.named_steps["clf"].coef_.shape[1]
 
 
 # 2. Fixture và CV tests cho cả 2 model

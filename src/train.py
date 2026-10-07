@@ -24,7 +24,8 @@ from sklearn.tree import DecisionTreeClassifier
 from src.config import load_config
 from src.data_split import load_split_data
 from src.evaluate import evaluate_predictions
-from src.features import build_features, make_pipeline
+from src.features import build_features
+from src.pipelines import make_pipeline
 from src.tracking import setup_mlflow
 
 logger = logging.getLogger(__name__)
@@ -111,8 +112,8 @@ def run_cv(
     """Chạy Stratified K-Fold CV, trả về list metrics mỗi fold.
 
     Args:
-        pipeline: sklearn Pipeline (StandardScaler + estimator).
-        X: Feature DataFrame (từ build_features).
+        pipeline: sklearn Pipeline (src.pipelines.make_pipeline).
+        X: DataFrame cột gốc (từ build_features).
         y: Series nhãn nhị phân.
         n_splits: Số fold (mặc định 5).
         random_state: Seed cho StratifiedKFold (nếu None sẽ đọc từ config).
