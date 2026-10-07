@@ -41,7 +41,7 @@ def test_preprocessing_pipeline_runs():
         "PAY_AMT6": [500, 1000, 1500],
     })
 
-    pipeline = build_preprocessing_pipeline()
+    pipeline = build_preprocessing_pipeline(age_binning=False)
     result = pipeline.fit_transform(X)
 
     assert result.shape[0] == 3
@@ -116,7 +116,7 @@ def test_pipeline_handles_unknown_category():
     X_valid = X_train.copy()
     X_valid.loc[0, "MARRIAGE"] = 99
 
-    pipeline = build_preprocessing_pipeline()
+    pipeline = build_preprocessing_pipeline(age_binning=False)
     pipeline.fit(X_train)
 
     result = pipeline.transform(X_valid)
@@ -151,8 +151,8 @@ def test_preprocessing_pipeline_fairness_mode():
         "PAY_AMT6": [500, 1000],
     })
 
-    pipe_no_sex = build_preprocessing_pipeline(drop_sensitive=True)
-    pipe_with_sex = build_preprocessing_pipeline(drop_sensitive=False)
+    pipe_no_sex = build_preprocessing_pipeline(drop_sensitive=True, age_binning=False)
+    pipe_with_sex = build_preprocessing_pipeline(drop_sensitive=False, age_binning=False)
 
     res_no_sex = pipe_no_sex.fit_transform(X)
     res_with_sex = pipe_with_sex.fit_transform(X)
@@ -165,9 +165,30 @@ def test_preprocessing_pipeline_engineered_features(raw_credit_df):
     import numpy as np
 
     X = raw_credit_df.drop(columns=["default.payment.next.month"])
+    y = raw_credit_df["default.payment.next.month"]
 
-    res_raw = build_preprocessing_pipeline(engineered=False).fit_transform(X)
-    res_eng = build_preprocessing_pipeline(engineered=True).fit_transform(X)
+    res_raw = build_preprocessing_pipeline(engineered=False).fit_transform(X, y)
+    res_eng = build_preprocessing_pipeline(engineered=True).fit_transform(X, y)
 
     assert res_eng.shape[1] > res_raw.shape[1]
     assert np.isfinite(res_eng).all()
+
+
+def test_preprocessing_pipeline_bins_age(raw_credit_df):
+    """AGE vào mô hình dưới dạng binning (Charter mục 8): one-hot AGE_BIN, không còn AGE liên tục."""
+    X = raw_credit_df.drop(columns=["default.payment.next.month"])
+    y = raw_credit_df["default.payment.next.month"]
+
+    pipeline = build_preprocessing_pipeline().fit(X, y)
+    names = list(pipeline.named_steps["preprocessor"].get_feature_names_out())
+
+    assert "numeric__AGE" not in names
+    age_bins = [n for n in names if n.startswith("categorical__AGE_BIN_")]
+    assert len(age_bins) >= 3
+
+    # Tuổi ngoài khoảng Train vẫn rơi vào bin đầu/cuối (biên -inf/+inf).
+    X_out = X.head(2).copy()
+    X_out["AGE"] = [18, 95]
+    result = pipeline.transform(X_out)
+    age_idx = [names.index(n) for n in age_bins]
+    assert (result[:, age_idx].sum(axis=1) == 1).all()

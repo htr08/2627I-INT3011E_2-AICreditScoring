@@ -6,7 +6,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 # Chiều import một chiều: preprocessing -> features. features.py không được import preprocessing.
-from src.features import ENGINEERED_COLUMNS, FeatureEngineeringTransformer
+from src.features import ENGINEERED_COLUMNS, AgeBinningTransformer, FeatureEngineeringTransformer
 
 # Danh sách biến phân loại cho mô hình chính thức (không bao gồm SEX theo Charter mục 1.3 & 8)
 CATEGORICAL_COLUMNS = [
@@ -90,18 +90,23 @@ class DropColumnsTransformer(BaseEstimator, TransformerMixin):
         return X.drop(columns=self.columns, errors="ignore")
 
 
-def build_preprocessing_pipeline(drop_sensitive: bool = True, engineered: bool = True):
+def build_preprocessing_pipeline(drop_sensitive: bool = True, engineered: bool = True, age_binning: bool = True):
     """Xây dựng pipeline tiền xử lý (feature freeze v1).
 
-    Thứ tự: làm sạch mã & đổi tên PAY_0 -> tạo đặc trưng T2 -> bỏ SEX/ID -> encode/scale.
+    Thứ tự: làm sạch mã & đổi tên PAY_0 -> tạo đặc trưng T2 -> binning AGE -> bỏ SEX/ID -> encode/scale.
 
     Args:
         drop_sensitive: Nếu True, loại bỏ SEX và ID (mô hình chính thức).
                         Nếu False, giữ SEX để đối chiếu fairness (Charter mục 1.3).
         engineered: Nếu True, thêm các đặc trưng T2 (ENGINEERED_COLUMNS).
+        age_binning: Nếu True, thay AGE bằng AGE_BIN (binning theo IV, fit trên dữ liệu train của từng
+                     fold, Charter mục 8) và one-hot AGE_BIN. Cần truyền y khi fit.
     """
     cat_cols = CATEGORICAL_COLUMNS if drop_sensitive else CATEGORICAL_COLUMNS_WITH_SEX
     num_cols = NUMERIC_COLUMNS + (ENGINEERED_COLUMNS if engineered else [])
+    if age_binning:
+        cat_cols = cat_cols + ["AGE_BIN"]
+        num_cols = [c for c in num_cols if c != "AGE"]
 
     categorical_pipeline = Pipeline([
         ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
@@ -124,6 +129,8 @@ def build_preprocessing_pipeline(drop_sensitive: bool = True, engineered: bool =
     steps = [("abnormal_codes", AbnormalCodeTransformer())]
     if engineered:
         steps.append(("feature_eng", FeatureEngineeringTransformer()))
+    if age_binning:
+        steps.append(("age_binning", AgeBinningTransformer(min_bins=3, max_bins=8)))
     if drop_sensitive:
         steps.append(("drop_sensitive", DropColumnsTransformer(columns=SENSITIVE_COLUMNS)))
     steps.append(("preprocessor", preprocessor))

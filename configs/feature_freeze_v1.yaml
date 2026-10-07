@@ -17,9 +17,9 @@ model_features:
   - PAY_4
   - PAY_5
   - PAY_6
+  - AGE_BIN
   numeric_raw:
   - LIMIT_BAL
-  - AGE
   - BILL_AMT1
   - BILL_AMT2
   - BILL_AMT3
@@ -32,6 +32,8 @@ model_features:
   - PAY_AMT4
   - PAY_AMT5
   - PAY_AMT6
+  age: 'AGE_BIN: binning theo IV trên Train (3–8 bin), one-hot; không dùng AGE liên
+    tục'
   numeric_engineered:
   - UTIL_1
   - UTIL_2
