@@ -11,19 +11,20 @@ Giao diện (mô hình thật cần theo đúng):
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
 
 import numpy as np
 
-MONTHS = range(1, 7)  # 1 = tháng 9/2005 (gần nhất) ... 6 = tháng 4/2005
+from app.explanation import (  # noqa: F401 (FEATURE_GROUPS re-export cho test)
+    BILL_VOLATILITY,
+    DELINQUENCY,
+    DEMOGRAPHICS,
+    FEATURE_GROUPS,
+    REPAYMENT,
+    UTILIZATION,
+    Explanation,
+)
 
-# Nhóm đặc trưng dùng cho reason codes (project_plan.md, mục 3e).
-DELINQUENCY = "Lịch sử trễ hạn"
-UTILIZATION = "Mức sử dụng hạn mức"
-REPAYMENT = "Hành vi trả nợ"
-BILL_VOLATILITY = "Biến động dư nợ"
-DEMOGRAPHICS = "Nhân khẩu học"
-FEATURE_GROUPS = [DELINQUENCY, UTILIZATION, REPAYMENT, BILL_VOLATILITY, DEMOGRAPHICS]
+MONTHS = range(1, 7)  # 1 = tháng 9/2005 (gần nhất) ... 6 = tháng 4/2005
 
 # Tỷ lệ vỡ nợ trung bình của dữ liệu, dùng làm base value.
 BASE_PD = 0.221
@@ -40,13 +41,6 @@ _LINEAR_TERMS = {
 }
 _EDUCATION_EFFECT = {1: -0.10, 2: 0.0, 3: 0.05, 4: -0.20}
 _MARRIAGE_EFFECT = {1: 0.05, 2: -0.05, 3: 0.0}
-
-
-@dataclass(frozen=True)
-class Explanation:
-    pd: float
-    base_logit: float
-    contributions: dict[str, float]
 
 
 def _logit(p: float) -> float:

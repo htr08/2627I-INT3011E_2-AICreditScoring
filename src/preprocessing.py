@@ -1,13 +1,15 @@
 import pandas as pd
-
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+# Chiều import một chiều: preprocessing -> features. features.py không được import preprocessing.
+from src.features import ENGINEERED_COLUMNS, AgeBinningTransformer, FeatureEngineeringTransformer
 
+# Danh sách biến phân loại cho mô hình chính thức (không bao gồm SEX theo Charter mục 1.3 & 8)
 CATEGORICAL_COLUMNS = [
-    "SEX",
     "EDUCATION",
     "MARRIAGE",
     "PAY_1",
@@ -17,6 +19,12 @@ CATEGORICAL_COLUMNS = [
     "PAY_5",
     "PAY_6",
 ]
+
+# Danh sách biến phân loại đầy đủ (bao gồm SEX cho mô hình đối chiếu fairness)
+CATEGORICAL_COLUMNS_WITH_SEX = ["SEX"] + CATEGORICAL_COLUMNS
+
+# Các cột nhạy cảm / không phải đặc trưng dự đoán
+SENSITIVE_COLUMNS = ["SEX", "ID"]
 
 NUMERIC_COLUMNS = [
     "LIMIT_BAL",
@@ -35,39 +43,96 @@ NUMERIC_COLUMNS = [
     "PAY_AMT6",
 ]
 
+
 class AbnormalCodeTransformer(BaseEstimator, TransformerMixin):
+    """Xử lý các mã không được tài liệu hóa và chuẩn hóa tên cột theo project_plan.md mục 3.1:
+    - PAY_0 -> PAY_1 (thống nhất chuỗi tháng 1..6)
+    - EDUCATION: 0, 5, 6 -> 4 ('Khác')
+    - MARRIAGE: 0 -> 3 ('Khác')
+    """
+
     def fit(self, X, y=None):
         return self
 
     def transform(self, X):
         X = X.copy()
 
+        # Đổi tên PAY_0 -> PAY_1 nếu có
+        if "PAY_0" in X.columns and "PAY_1" not in X.columns:
+            X = X.rename(columns={"PAY_0": "PAY_1"})
+
+        # Merge mã EDUCATION bất thường vào mã 4 ("Khác")
         if "EDUCATION" in X.columns:
             X["EDUCATION"] = X["EDUCATION"].replace({
                 0: 4,
                 5: 4,
-                6: 4
+                6: 4,
             })
+
+        # Merge mã MARRIAGE 0 vào mã 3 ("Khác")
+        if "MARRIAGE" in X.columns:
+            X["MARRIAGE"] = X["MARRIAGE"].replace({0: 3})
 
         return X
 
-def build_preprocessing_pipeline():
+
+class DropColumnsTransformer(BaseEstimator, TransformerMixin):
+    """Transformer loại bỏ các cột chỉ định (ví dụ SEX, ID)."""
+
+    def __init__(self, columns=None):
+        self.columns = columns or []
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = X.copy()
+        return X.drop(columns=self.columns, errors="ignore")
+
+
+def build_preprocessing_pipeline(drop_sensitive: bool = True, engineered: bool = True, age_binning: bool = True):
+    """Xây dựng pipeline tiền xử lý (feature freeze v1).
+
+    Thứ tự: làm sạch mã & đổi tên PAY_0 -> tạo đặc trưng T2 -> binning AGE -> bỏ SEX/ID -> encode/scale.
+
+    Args:
+        drop_sensitive: Nếu True, loại bỏ SEX và ID (mô hình chính thức).
+                        Nếu False, giữ SEX để đối chiếu fairness (Charter mục 1.3).
+        engineered: Nếu True, thêm các đặc trưng T2 (ENGINEERED_COLUMNS).
+        age_binning: Nếu True, thay AGE bằng AGE_BIN (binning theo IV, fit trên dữ liệu train của từng
+                     fold, Charter mục 8) và one-hot AGE_BIN. Cần truyền y khi fit.
+    """
+    cat_cols = CATEGORICAL_COLUMNS if drop_sensitive else CATEGORICAL_COLUMNS_WITH_SEX
+    num_cols = NUMERIC_COLUMNS + (ENGINEERED_COLUMNS if engineered else [])
+    if age_binning:
+        cat_cols = cat_cols + ["AGE_BIN"]
+        num_cols = [c for c in num_cols if c != "AGE"]
+
     categorical_pipeline = Pipeline([
-        ("encoder", OneHotEncoder(handle_unknown="ignore"))
+        ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
     ])
 
+    # Một số đặc trưng T2 có NaN (vd PAY_RATIO khi dư nợ <= 0) nên cần impute trước khi scale.
     numeric_pipeline = Pipeline([
-        ("scaler", StandardScaler())
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
     ])
 
-    preprocessor = ColumnTransformer([
-        ("categorical", categorical_pipeline, CATEGORICAL_COLUMNS),
-        ("numeric", numeric_pipeline, NUMERIC_COLUMNS)
-    ])
+    preprocessor = ColumnTransformer(
+        [
+            ("categorical", categorical_pipeline, cat_cols),
+            ("numeric", numeric_pipeline, num_cols),
+        ],
+        remainder="drop",
+    )
 
-    pipeline = Pipeline([
-        ("abnormal_codes", AbnormalCodeTransformer()),
-        ("preprocessor", preprocessor)
-    ])
+    steps = [("abnormal_codes", AbnormalCodeTransformer())]
+    if engineered:
+        steps.append(("feature_eng", FeatureEngineeringTransformer()))
+    if age_binning:
+        steps.append(("age_binning", AgeBinningTransformer(min_bins=3, max_bins=8)))
+    if drop_sensitive:
+        steps.append(("drop_sensitive", DropColumnsTransformer(columns=SENSITIVE_COLUMNS)))
+    steps.append(("preprocessor", preprocessor))
 
-    return pipeline
+    return Pipeline(steps)

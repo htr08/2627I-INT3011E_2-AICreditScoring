@@ -1,0 +1,164 @@
+# Feature freeze v1 - sinh tự động bởi: python scripts/run_pipeline.py --mode woe --freeze
+# Mọi thay đổi đặc trưng sau mốc này phải được cả nhóm thống nhất (project_plan.md).
+version: v1
+frozen_on: '2026-10-07'
+splits_hash: 8147f0c3d6867be7
+excluded_columns:
+- SEX
+- ID
+model_features:
+  note: Dùng cho LR/DT/RF/XGBoost qua src.preprocessing.build_preprocessing_pipeline
+  categorical:
+  - EDUCATION
+  - MARRIAGE
+  - PAY_1
+  - PAY_2
+  - PAY_3
+  - PAY_4
+  - PAY_5
+  - PAY_6
+  - AGE_BIN
+  numeric_raw:
+  - LIMIT_BAL
+  - BILL_AMT1
+  - BILL_AMT2
+  - BILL_AMT3
+  - BILL_AMT4
+  - BILL_AMT5
+  - BILL_AMT6
+  - PAY_AMT1
+  - PAY_AMT2
+  - PAY_AMT3
+  - PAY_AMT4
+  - PAY_AMT5
+  - PAY_AMT6
+  age: 'AGE_BIN: binning theo IV trên Train (3–8 bin), one-hot; không dùng AGE liên
+    tục'
+  numeric_engineered:
+  - UTIL_1
+  - UTIL_2
+  - UTIL_3
+  - UTIL_4
+  - UTIL_5
+  - UTIL_6
+  - UTIL_MEAN
+  - PAY_MEAN
+  - PAY_MAX
+  - PAY_SLOPE
+  - PAY_LATE_CONSECUTIVE
+  - PAY_LATE_2PLUS_COUNT
+  - PAY_RATIO_1
+  - PAY_RATIO_2
+  - PAY_RATIO_3
+  - PAY_RATIO_4
+  - PAY_RATIO_5
+  - PAY_RATIO_MEAN
+  - BILL_STD
+  - BILL_DELTA
+  - MIN_PAY_FLAG_1
+  - MIN_PAY_FLAG_2
+  - MIN_PAY_FLAG_3
+  - MIN_PAY_FLAG_4
+  - MIN_PAY_FLAG_5
+  - MIN_PAY_FLAG_6
+  - MIN_PAY_FLAG_COUNT
+scorecard:
+  note: Dùng cho src.pipelines.build_scorecard_pipeline; IV tính trên toàn bộ Train
+  n_bins: 5
+  age_bins:
+  - 3
+  - 8
+  iv_threshold: 0.02
+  selected_features:
+  - LIMIT_BAL
+  - EDUCATION
+  - PAY_1
+  - PAY_2
+  - PAY_3
+  - PAY_4
+  - PAY_5
+  - PAY_6
+  - PAY_AMT1
+  - PAY_AMT2
+  - PAY_AMT3
+  - PAY_AMT4
+  - PAY_AMT5
+  - PAY_AMT6
+  - UTIL_1
+  - UTIL_2
+  - UTIL_3
+  - UTIL_4
+  - UTIL_5
+  - UTIL_6
+  - UTIL_MEAN
+  - PAY_MEAN
+  - PAY_MAX
+  - PAY_SLOPE
+  - PAY_LATE_CONSECUTIVE
+  - PAY_LATE_2PLUS_COUNT
+  - PAY_RATIO_1
+  - PAY_RATIO_2
+  - PAY_RATIO_3
+  - PAY_RATIO_4
+  - PAY_RATIO_5
+  - PAY_RATIO_MEAN
+  - BILL_STD
+  - BILL_DELTA
+  - MIN_PAY_FLAG_1
+  - MIN_PAY_FLAG_2
+  - MIN_PAY_FLAG_3
+  - MIN_PAY_FLAG_4
+  - MIN_PAY_FLAG_5
+  - MIN_PAY_FLAG_6
+  - MIN_PAY_FLAG_COUNT
+  - AGE_BIN
+  iv:
+    PAY_1: 0.9155
+    PAY_LATE_2PLUS_COUNT: 0.8644
+    PAY_LATE_CONSECUTIVE: 0.8474
+    PAY_MAX: 0.82
+    PAY_MEAN: 0.7567
+    PAY_2: 0.5535
+    PAY_3: 0.4182
+    PAY_SLOPE: 0.3816
+    PAY_4: 0.3591
+    PAY_5: 0.3329
+    PAY_6: 0.2866
+    BILL_DELTA: 0.1757
+    LIMIT_BAL: 0.1749
+    PAY_AMT1: 0.1621
+    PAY_AMT2: 0.1473
+    BILL_STD: 0.1449
+    PAY_RATIO_1: 0.1402
+    PAY_RATIO_MEAN: 0.1381
+    PAY_RATIO_2: 0.1375
+    UTIL_MEAN: 0.1233
+    UTIL_6: 0.1179
+    PAY_RATIO_3: 0.1177
+    UTIL_5: 0.1128
+    UTIL_4: 0.1119
+    PAY_RATIO_5: 0.1088
+    PAY_RATIO_4: 0.1023
+    PAY_AMT3: 0.0931
+    UTIL_3: 0.088
+    UTIL_2: 0.0835
+    PAY_AMT6: 0.0821
+    PAY_AMT4: 0.0768
+    MIN_PAY_FLAG_COUNT: 0.0732
+    UTIL_1: 0.0688
+    PAY_AMT5: 0.0679
+    MIN_PAY_FLAG_6: 0.0486
+    MIN_PAY_FLAG_4: 0.0402
+    EDUCATION: 0.0381
+    MIN_PAY_FLAG_3: 0.0373
+    MIN_PAY_FLAG_5: 0.0311
+    MIN_PAY_FLAG_2: 0.0299
+    AGE_BIN: 0.0217
+    MIN_PAY_FLAG_1: 0.0213
+    BILL_AMT6: 0.0169
+    BILL_AMT5: 0.0132
+    BILL_AMT2: 0.013
+    BILL_AMT1: 0.012
+    BILL_AMT3: 0.0104
+    BILL_AMT4: 0.0101
+    MARRIAGE: 0.0029

@@ -2,7 +2,7 @@
 
 Theo phản hồi review PR #16:
 - Fixture dùng np.random.default_rng(42) cục bộ thay vì np.random.seed()
-- Nhãn sinh có tương quan với PAY_1 và LIMIT_BAL để assert AUC > 0.6
+- Nhãn sinh có tương quan với PAY_0 và LIMIT_BAL (fixture đúng schema CSV gốc) để assert AUC > 0.6
 - Parametrize kiểm thử đồng thời cho LogisticRegression và DecisionTreeClassifier
 - Kiểm tra whitelist REPORT_METRICS: không lọt optimal_threshold hay min_expected_cost
 - Kiểm tra std mẫu (ddof=1)
@@ -13,45 +13,22 @@ Theo phản hồi review PR #16:
 """
 
 import numpy as np
-import pandas as pd
 import pytest
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 from sklearn.tree import DecisionTreeClassifier
 
-from src.features import build_features, make_pipeline
+from conftest import make_raw_credit_df
+from src.features import build_features
+from src.pipelines import make_pipeline
 from src.train import REPORT_METRICS, get_cv_splitter, run_cv, summarize_folds, train_baseline
 
 
 @pytest.fixture
 def dummy_train_df():
-    """500 mẫu với nhãn có tín hiệu mạnh từ PAY_1 và LIMIT_BAL để AUC > 0.6."""
-    rng = np.random.default_rng(42)
-    n = 500
-    limit_bal = rng.integers(10_000, 500_000, n)
-    pay_1 = rng.integers(-1, 9, n)
-    pay_2 = rng.integers(-1, 9, n)
-
-    # Tương quan dương mạnh với PAY_1, âm với LIMIT_BAL → AUC đạt > 0.6 ổn định
-    log_odds = -1.5 + 0.8 * pay_1 + 0.3 * pay_2 - 2.0 * (limit_bal / 500_000)
-    prob = 1.0 / (1.0 + np.exp(-log_odds))
-    labels = (rng.random(n) < prob).astype(int)
-
-    # Đảm bảo có cả hai class
-    if labels.sum() == 0:
-        labels[:50] = 1
-    elif labels.sum() == n:
-        labels[:50] = 0
-
-    data = {
-        "ID": np.arange(1, n + 1),
-        "LIMIT_BAL": limit_bal,
-        "PAY_1": pay_1,
-        "PAY_2": pay_2,
-        "default.payment.next.month": labels,
-    }
-    return pd.DataFrame(data)
+    """1000 mẫu đúng schema CSV gốc (có PAY_0, SEX) với nhãn có tín hiệu từ PAY_0 và LIMIT_BAL."""
+    return make_raw_credit_df(n=1000, seed=42)
 
 
 # 1. Test build_features
@@ -68,6 +45,27 @@ def test_build_features_drops_id_and_target_and_raises_keyerror(dummy_train_df):
     df_missing_target = dummy_train_df.drop(columns=["default.payment.next.month"])
     with pytest.raises(KeyError, match="Không tìm thấy cột nhãn"):
         build_features(df_missing_target)
+
+
+def test_build_features_sex_toggle(dummy_train_df):
+    """Mô hình chính thức bỏ SEX; include_sex=True giữ SEX cho bản đối chiếu fairness."""
+    X_official, _ = build_features(dummy_train_df)
+    X_fairness, _ = build_features(dummy_train_df, include_sex=True)
+
+    assert "SEX" not in X_official.columns
+    assert "SEX" in X_fairness.columns
+
+
+def test_make_pipeline_uses_preprocessing_on_raw_columns(dummy_train_df):
+    """make_pipeline nhận cột gốc (PAY_0), dùng tiền xử lý của preprocessing.py và encode thêm SEX khi bật."""
+    X, y = build_features(dummy_train_df)
+    X_sex, _ = build_features(dummy_train_df, include_sex=True)
+
+    pipe = make_pipeline(LogisticRegression(max_iter=300)).fit(X, y)
+    pipe_sex = make_pipeline(LogisticRegression(max_iter=300), include_sex=True).fit(X_sex, y)
+
+    assert "preprocess" in pipe.named_steps
+    assert pipe_sex.named_steps["clf"].coef_.shape[1] > pipe.named_steps["clf"].coef_.shape[1]
 
 
 # 2. Fixture và CV tests cho cả 2 model
@@ -223,3 +221,66 @@ def test_train_baseline_mlflow(tmp_path, dummy_train_df, monkeypatch):
         model_version = client.get_model_version_by_alias(name, "baseline")
         assert model_version is not None
         assert "baseline" in model_version.aliases
+
+
+def test_get_advanced_default_models():
+    """Kiểm tra get_advanced_default_models trả về đúng estimator RF và XGBoost."""
+    from src.train import get_advanced_default_models
+    models = get_advanced_default_models(random_state=42)
+    assert "rf_default" in models
+    assert "xgboost_default" in models
+
+
+def test_train_rf_xgboost_default_mlflow(tmp_path, dummy_train_df, monkeypatch):
+    """train_rf_xgboost_default chạy đủ 2 run (RF, XGBoost), log metrics whitelist và alias 'default'."""
+    import mlflow
+    from mlflow.tracking import MlflowClient
+    from src.train import train_rf_xgboost_default
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setattr("src.train.load_split_data", lambda: (dummy_train_df, None, None))
+
+    train_rf_xgboost_default()
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name("credit_scoring")
+    assert experiment is not None
+
+    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    assert len(runs) == 2
+
+    run_names = {r.data.tags.get("mlflow.runName") for r in runs}
+    assert run_names == {"rf_default", "xgboost_default"}
+
+    for r in runs:
+        for metric in ("roc_auc_mean", "ks_mean", "gini_mean", "pr_auc_mean"):
+            assert metric in r.data.metrics
+            assert 0.0 <= r.data.metrics[metric] <= 1.0
+
+    for name in ("rf_default", "xgboost_default"):
+        model_version = client.get_model_version_by_alias(name, "default")
+        assert model_version is not None
+        assert "default" in model_version.aliases
+
+
+def test_train_baseline_with_sex_is_not_registered(tmp_path, dummy_train_df, monkeypatch):
+    """Bản đối chiếu fairness: run có hậu tố _with_sex, tag include_sex và không vào Model Registry."""
+    from mlflow.tracking import MlflowClient
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setattr("src.train.load_split_data", lambda: (dummy_train_df, None, None))
+
+    train_baseline(include_sex=True)
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name("credit_scoring")
+    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+
+    assert {r.data.tags.get("mlflow.runName") for r in runs} == {
+        "logreg_baseline_with_sex",
+        "dt_baseline_with_sex",
+    }
+    assert all(r.data.tags.get("include_sex") == "True" for r in runs)
+    assert client.search_registered_models() == []

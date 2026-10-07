@@ -1,9 +1,13 @@
 """Demo Streamlit: nhập hồ sơ -> PD, điểm tín dụng, giải thích theo nhóm đặc trưng.
 
-Chạy từ thư mục gốc repo:  streamlit run app/streamlit_app.py
-Bố cục xem reports/demo_wireframe.md. Tuần 1 dùng mock model; đổi mô hình thật tại load_model().
+Khởi chạy từ thư mục gốc repo: streamlit run app/streamlit_app.py
+Bố cục: reports/demo_wireframe.md. Mô hình mặc định là baseline Logistic Regression trong MLflow
+Model Registry (đăng ký bởi `python scripts/run_pipeline.py`), giải thích SHAP lấy background là tập Train
+(yêu cầu data/raw và data/splits); nếu không nạp được thì dùng mock model.
+Biến môi trường DEMO_MODEL=mock buộc app luôn dùng mock model.
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -14,6 +18,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from app.baseline_model import BaselineModel  # noqa: E402
 from app.mock_model import MockModel  # noqa: E402
 from app.sample_profiles import PROFILES  # noqa: E402
 from src.scoring import BASE_ODDS, BASE_SCORE, PDO, SCORE_CLIP, base_points, pd_to_score, shap_to_points  # noqa: E402
@@ -37,7 +42,13 @@ SCORE_DISPLAY_RANGE = (420, 640)
 
 @st.cache_resource
 def load_model():
-    return MockModel()
+    """Trả về (model, lỗi khi nạp baseline hoặc None)."""
+    if os.environ.get("DEMO_MODEL") == "mock":
+        return MockModel(), None
+    try:
+        return BaselineModel.from_registry(), None
+    except Exception as exc:  # registry trống, chưa train, sai cấu trúc pipeline...
+        return MockModel(), f"Không nạp được mô hình baseline: {exc}"
 
 
 def apply_profile(name: str) -> None:
@@ -143,13 +154,20 @@ def main() -> None:
     st.set_page_config(page_title="AI Credit Scoring", page_icon="💳", layout="wide")
     if "LIMIT_BAL" not in st.session_state:
         apply_profile(DEFAULT_PROFILE)
-    model = load_model()
+    model, load_error = load_model()
 
     with st.sidebar:
         st.header("Mô hình")
         st.write(model.name)
-        if getattr(model, "is_mock", False):
+        if load_error:
+            st.error(f"{load_error}\n\nMô hình baseline được huấn luyện và đăng ký bởi `python scripts/run_pipeline.py`.")
+        if model.is_mock:
             st.warning("Đang dùng mock model: kết quả chỉ để minh họa giao diện.")
+        else:
+            st.info(
+                "PD chưa hiệu chuẩn trên tập Valid. Mô hình dùng bộ đặc trưng feature freeze v1 "
+                "và không dùng SEX (Charter mục 8)."
+            )
         st.caption(f"Thang điểm PDO: {BASE_SCORE} điểm tại odds {BASE_ODDS}:1, PDO = {PDO}.")
         st.header("Hồ sơ mẫu")
         profile = st.selectbox("Chọn hồ sơ", list(PROFILES), index=list(PROFILES).index(DEFAULT_PROFILE))
