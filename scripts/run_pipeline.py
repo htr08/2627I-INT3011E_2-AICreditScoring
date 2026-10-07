@@ -68,8 +68,9 @@ def write_feature_freeze(iv_sorted, selected):
         "excluded_columns": SENSITIVE_COLUMNS,
         "model_features": {
             "note": "Dùng cho LR/DT/RF/XGBoost qua src.preprocessing.build_preprocessing_pipeline",
-            "categorical": CATEGORICAL_COLUMNS,
-            "numeric_raw": NUMERIC_COLUMNS,
+            "categorical": CATEGORICAL_COLUMNS + ["AGE_BIN"],
+            "numeric_raw": [c for c in NUMERIC_COLUMNS if c != "AGE"],
+            "age": f"AGE_BIN: binning theo IV trên Train ({AGE_MIN_BINS}–{AGE_MAX_BINS} bin), one-hot; không dùng AGE liên tục",
             "numeric_engineered": ENGINEERED_COLUMNS,
         },
         "scorecard": {
