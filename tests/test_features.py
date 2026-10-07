@@ -277,6 +277,30 @@ def test_woe_out_of_range_uses_edge_bins():
     assert all(w != 0 for w in outside_woe)
 
 
+# NaN must get its own WoE instead of being dropped when fitting / treated as neutral.
+def test_woe_missing_values_get_own_bin():
+    values = list(range(1, 41)) + [np.nan] * 10
+    X = pd.DataFrame({"feature": values})
+    y = pd.Series([0] * 40 + [1] * 10)
+
+    transformer = WoEIVTransformer(n_bins=4, iv_threshold=0.0).fit(X, y)
+    result = transformer.transform(pd.DataFrame({"feature": [np.nan, 5.0]}))["feature"]
+
+    assert result.iloc[0] < 0          # NaN toàn nhãn 1 -> WoE âm rõ rệt
+    assert result.iloc[0] != 0
+    assert np.isfinite(result).all()
+
+
+# Binary flags must not collapse into a single bin (IV = 0).
+def test_woe_binary_flag_has_iv():
+    X = pd.DataFrame({"flag": [0] * 10 + [1] * 10})
+    y = pd.Series([0] * 8 + [1] * 2 + [0] * 2 + [1] * 8)
+
+    transformer = WoEIVTransformer(iv_threshold=0.0).fit(X, y)
+
+    assert transformer.iv_values_["flag"] > 0.5
+
+
 def test_age_bins_cover_out_of_range_ages():
     X_train = pd.DataFrame({"AGE": [20, 22, 25, 28, 30, 32, 35, 40, 45, 50]})
     y_train = pd.Series([0, 0, 1, 0, 1, 1, 0, 1, 1, 1])
@@ -335,3 +359,4 @@ def test_scorecard_pipeline_with_cv(raw_credit_df):
 
     assert len(scores) == 5
     assert np.isfinite(scores).all()
+

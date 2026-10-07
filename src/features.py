@@ -237,6 +237,17 @@ class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
         return X
 
 
+MISSING_BIN = "__MISSING__"
+
+
+def _label_missing(bins: pd.Series) -> pd.Series:
+    """Gán NaN (vd UTIL khi LIMIT_BAL = 0, PAY_RATIO khi dư nợ <= 0) vào bin riêng MISSING_BIN
+    để có WoE riêng, thay vì bị bỏ khi fit và bị coi là trung tính (WoE = 0) khi transform."""
+    if not bins.isna().any():
+        return bins
+    return bins.astype(object).where(bins.notna(), MISSING_BIN)
+
+
 def _open_edges(edges: np.ndarray) -> np.ndarray:
     """Mở rộng biên ngoài cùng thành -inf/+inf để giá trị ngoài khoảng Train
     rơi vào bin đầu/cuối thay vì thành NaN (WoE = 0)."""
@@ -398,11 +409,17 @@ class AgeBinningTransformer(BaseEstimator, TransformerMixin):
 
 
 class WoEIVTransformer(BaseEstimator, TransformerMixin):
-    """Transformer mã hóa Weight of Evidence (WoE) và lọc theo Information Value (IV)."""
+    """Transformer mã hóa Weight of Evidence (WoE) và lọc theo Information Value (IV).
 
-    def __init__(self, n_bins: int = 5, iv_threshold: float = 0.02):
+    Biến số có <= max_categories giá trị khác nhau (cờ 0/1, EDUCATION, PAY_*) được xử lý như
+    biến phân loại (mỗi giá trị một bin) vì qcut sẽ gộp chúng thành quá ít bin.
+    NaN của biến liên tục được gán vào bin MISSING_BIN riêng (có WoE riêng).
+    """
+
+    def __init__(self, n_bins: int = 5, iv_threshold: float = 0.02, max_categories: int = 12):
         self.n_bins = n_bins
         self.iv_threshold = iv_threshold
+        self.max_categories = max_categories
 
     def fit(self, X, y):
         X = X.copy()
@@ -415,7 +432,11 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
 
         for col in X.columns:
             try:
-                if pd.api.types.is_numeric_dtype(X[col]):
+                is_continuous = (
+                    pd.api.types.is_numeric_dtype(X[col])
+                    and X[col].nunique() > self.max_categories
+                )
+                if is_continuous:
                     _, edges = pd.qcut(
                         X[col],
                         q=self.n_bins,
@@ -426,18 +447,18 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
                     if len(edges) < 2:
                         continue
                     edges = _open_edges(edges)
-                    bins = pd.cut(
+                    bins = _label_missing(pd.cut(
                         X[col],
                         bins=edges,
                         include_lowest=True
-                    )
+                    ))
                     self.bin_edges_[col] = edges
                 else:
                     bins = X[col].astype(str)
                     self.category_maps_[col] = bins.unique().tolist()
 
                 data = pd.DataFrame({"bin": bins, "target": y})
-                grouped = data.groupby("bin", observed=False)["target"]
+                grouped = data.groupby("bin", observed=False, sort=False)["target"]
                 good = grouped.apply(lambda x: (x == 0).sum())
                 bad = grouped.apply(lambda x: (x == 1).sum())
 
@@ -465,11 +486,11 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
 
         for col in self.selected_features_:
             if col in self.bin_edges_:
-                bins = pd.cut(
+                bins = _label_missing(pd.cut(
                     X[col],
                     bins=self.bin_edges_[col],
                     include_lowest=True
-                )
+                ))
             else:
                 bins = X[col].astype(str)
 
