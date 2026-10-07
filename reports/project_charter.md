@@ -30,40 +30,53 @@ Mô hình cuối vượt baseline Logistic Regression về ROC-AUC với khác b
 - Bootstrap 95% CI của chênh lệch AUC không chứa 0, **hoặc**
 - DeLong test p < 0.05.
 
-Baseline Logistic Regression là run `logreg_baseline` (alias `baseline` trong MLflow Model Registry). Baseline này chưa encode PAY_*, EDUCATION, MARRIAGE (Option A) nên khá yếu — Decision Tree baseline đã vượt 0.023 AUC. Vì vậy KPI chính chỉ là điều kiện cần; mốc sàn ở mục 3.2 dùng để xác nhận mô hình cuối vượt cả baseline mạnh nhất.
+Baseline Logistic Regression là run `logreg_baseline` (alias `baseline` trong MLflow Model Registry), huấn luyện trên bộ đặc trưng feature freeze v1 (`configs/feature_freeze_v1.yaml`): mã không tài liệu hóa được chuẩn hóa, các biến phân loại được one-hot và đặc trưng T2 được bổ sung. Đây là mô hình có ROC-AUC CV cao nhất trong nhóm Logistic Regression, Decision Tree, Random Forest và XGBoost tham số mặc định (mục 3.2). Mốc sàn ở mục 3.2 bổ sung một ngưỡng tuyệt đối bên cạnh KPI tương đối.
 
 ### 3.2. KPI tham chiếu (tuyệt đối)
 
-> Điều chỉnh tại Tuần 1 theo kết quả baseline thực tế (PR #16). Mức cũ: ROC-AUC ≥ 0.77 (Gini ≥ 0.54), KS ≥ 0.35.
+> Điều chỉnh lần 2 tại Tuần 2 – T3 theo feature freeze v1. Lịch sử mốc tham chiếu:
+>
+> - Chốt ban đầu (Tuần 1 – T2): ROC-AUC ≥ 0.77, Gini ≥ 0.54, KS ≥ 0.35.
+> - Lần 1 (Tuần 1 – T6, PR #16, baseline Option A), mốc sàn / mốc mục tiêu: ROC-AUC 0.76 / 0.77, Gini 0.52 / 0.54, KS 0.43 / 0.45, PR-AUC 0.52 / 0.53.
 
-**Baseline thực tế** — 5-fold Stratified CV trên Train (18.000 mẫu, 23 đặc trưng, Option A, tỷ lệ vỡ nợ 22.1%), mean ± std (ddof=1):
+**Baseline thực tế** — 5-fold Stratified CV trên Train (18.000 mẫu, tỷ lệ vỡ nợ 22.1%), mean ± std (ddof=1). Pipeline `src.pipelines.make_pipeline`: làm sạch mã (PAY_0 → PAY_1, EDUCATION 0/5/6 → 4, MARRIAGE 0 → 3) → đặc trưng T2 → binning AGE theo IV (AGE_BIN) → bỏ SEX, ID → one-hot 9 biến phân loại (gồm AGE_BIN) + impute/scale 40 biến số.
 
 | Mô hình | ROC-AUC | Gini | KS | PR-AUC | Brier (chưa calib.) |
 |---|---|---|---|---|---|
-| Logistic Regression (`logreg_baseline`) | 0.7278 ± 0.0130 | 0.4557 ± 0.0261 | 0.3907 ± 0.0261 | 0.5109 ± 0.0106 | 0.1439 ± 0.0019 |
-| Decision Tree, max_depth=5 (`dt_baseline`) | 0.7506 ± 0.0107 | 0.5011 ± 0.0215 | 0.4136 ± 0.0216 | 0.5088 ± 0.0137 | 0.1372 ± 0.0026 |
+| Logistic Regression (`logreg_baseline`) | 0.7745 ± 0.0116 | 0.5490 ± 0.0233 | 0.4282 ± 0.0231 | 0.5470 ± 0.0179 | 0.1354 ± 0.0031 |
+| Decision Tree, max_depth=5 (`dt_baseline`) | 0.7672 ± 0.0120 | 0.5345 ± 0.0240 | 0.4162 ± 0.0184 | 0.5242 ± 0.0152 | 0.1367 ± 0.0031 |
 
-**Mốc tham chiếu mới** (đo trên tập Test):
+Tham khảo (không dùng để đặt mốc) — mô hình tham số mặc định cùng pipeline; Logistic Scorecard được đánh giá trên cùng bộ fold, hiện mới có ROC-AUC:
+
+| Mô hình | ROC-AUC | Gini | KS | PR-AUC | Brier (chưa calib.) |
+|---|---|---|---|---|---|
+| Random Forest (`rf_default`) | 0.7667 ± 0.0097 | 0.5333 ± 0.0193 | 0.4107 ± 0.0240 | 0.5319 ± 0.0200 | 0.1388 ± 0.0035 |
+| XGBoost (`xgboost_default`) | 0.7597 ± 0.0073 | 0.5195 ± 0.0145 | 0.4007 ± 0.0160 | 0.5258 ± 0.0125 | 0.1440 ± 0.0031 |
+| Logistic Scorecard WoE (`build_scorecard_pipeline`) | 0.7809 | – | – | – | – |
+
+**Mốc tham chiếu** (đo trên tập Test):
 
 | Chỉ số | Mốc sàn | Mốc mục tiêu |
 |---|---|---|
-| ROC-AUC | ≥ 0.76 | ≥ 0.77 |
-| Gini | ≥ 0.52 | ≥ 0.54 |
-| KS | ≥ 0.43 | ≥ 0.45 |
-| PR-AUC | ≥ 0.52 | ≥ 0.53 |
+| ROC-AUC | ≥ 0.78 | ≥ 0.79 |
+| Gini | ≥ 0.57 | ≥ 0.59 |
+| KS | ≥ 0.45 | ≥ 0.47 |
+| PR-AUC | ≥ 0.56 | ≥ 0.58 |
 
-Cách xác định: mốc sàn = giá trị baseline tốt nhất của từng chỉ số + 1 std CV; mốc mục tiêu = + 2 std; làm tròn xuống 2 chữ số thập phân.
+Cách xác định: mốc sàn = giá trị baseline tốt nhất của từng chỉ số (đều là LR) + 1 std CV; mốc mục tiêu = + 2 std; làm tròn xuống 2 chữ số thập phân.
 
 Lý do điều chỉnh:
 
-- **KS:** mức cũ 0.35 thấp hơn cả LR baseline (0.39) nên không còn phân biệt được mô hình tốt/kém → nâng lên 0.43 / 0.45.
-- **ROC-AUC:** giữ 0.77 làm mốc mục tiêu (cao hơn DT baseline ≈ 1.8 std, cao hơn LR baseline 0.042). Bổ sung mốc sàn 0.76 để có một mức "chắc chắn vượt baseline tốt nhất", thay vì chỉ một con số gần trần.
-- **PR-AUC (bổ sung):** dữ liệu mất cân bằng; hai baseline gần như bằng nhau ở PR-AUC (~0.51) dù ROC-AUC chênh 0.023, nên cần theo dõi riêng.
+- **Tiền xử lý và đặc trưng:** ROC-AUC của LR tăng từ 0.7278 lên 0.7745 (+0.0467) sau khi mã không tài liệu hóa được chuẩn hóa, PAY_*, EDUCATION, MARRIAGE được one-hot và đặc trưng T2 được bổ sung. Mốc sàn lần 1 (0.76) thấp hơn baseline mới nên không còn phân biệt được mô hình tốt với mô hình kém.
+- **Baseline mạnh nhất:** Thứ hạng đảo so với lần 1: LR (0.7745) vượt DT (0.7672), nên các mốc lấy từ LR. Random Forest (0.7667) và XGBoost (0.7597) tham số mặc định chưa vượt LR; khoảng cách đến mốc sàn thuộc phạm vi tuning (Tuần 2 – T4 trở đi).
+- **Logistic Scorecard (WoE):** ROC-AUC 0.7809, cao hơn baseline LR 0.0064 (khoảng 0.5 std CV) và xấp xỉ mốc sàn 0.78.
 
 Lưu ý:
 
 - Mốc được suy ra từ CV trên Train nhưng áp dụng trên Test (chỉ chạy 1 lần ở Tuần 3). Chênh lệch CV–Test cỡ 1 std là bình thường, vì vậy luôn báo cáo kèm 95% CI bootstrap.
-- Baseline Option A vẫn dùng SEX và AGE liên tục (chưa theo mục 8). Chạy lại baseline bỏ SEX: ROC-AUC LR 0.7273, DT 0.7502 (giảm ≤ 0.0005) → không cần đổi mốc.
+- Mô hình chính thức không dùng SEX (mục 8). Bản đối chiếu fairness có SEX (run `*_with_sex`, không đăng ký vào Model Registry) đạt ROC-AUC LR 0.7749 và DT 0.7669, chênh không quá 0.0004 so với bản không SEX; SEX gần như không đóng góp vào khả năng phân biệt.
+- AGE được đưa vào mọi mô hình dưới dạng binning theo IV (AGE_BIN, 3–8 bin, fit lại trong từng fold) theo mục 8, thay cho AGE liên tục. So với AGE liên tục, ROC-AUC của LR giảm 0.0007 và của DT tăng 0.0007, đều trong phạm vi 0.1 std CV; các mốc tham chiếu không đổi.
+- Mốc mục tiêu ROC-AUC 0.79 cao hơn mọi mô hình đã đánh giá (cao nhất là Logistic Scorecard, 0.7809); khả năng đạt mốc phụ thuộc kết quả tuning.
 - KPI tham chiếu vẫn chỉ là mốc so sánh, không bắt buộc (xem mục 4).
 
 ## 4. Definition of Done (DoD)
@@ -88,6 +101,7 @@ Dừng tuning (Optuna) khi xảy ra một trong hai điều kiện:
 
 - **Chia dữ liệu:** Stratified theo target, random_state = 42, Train 60% / Valid 20% / Test 20%. Chỉ số dòng lưu chung cho cả nhóm.
 - **Không data leakage:** Binning/WoE, IV, lọc đặc trưng theo IV, target encoding, SMOTE đều chỉ fit trên Train, đặt trong Pipeline (sklearn/imblearn) để fit lại trong từng fold CV.
+- **Feature freeze v1:** Bộ đặc trưng được chốt tại `configs/feature_freeze_v1.yaml` (cột đầu vào, đặc trưng T2, AGE dạng binning, các cột loại bỏ SEX và ID, tham số binning/WoE và ngưỡng IV ≥ 0.02 của Scorecard). Từ Tuần 2 – T4, tuning chỉ thực hiện trên bộ đặc trưng này; mọi thay đổi cần cả nhóm thống nhất.
 - **Test set:** Chỉ chạy đánh giá 1 lần duy nhất, ở Tuần 3.
 - **Mô hình cuối:** Giữ nguyên bản fit trên Train; calibrator fit trên Valid. Không retrain trên Train + Valid.
 
