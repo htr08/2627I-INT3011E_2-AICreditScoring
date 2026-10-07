@@ -167,34 +167,43 @@ def summarize_folds(fold_metrics: List[Dict]) -> Dict[str, tuple]:
     }
 
 
-def train_baseline() -> None:
-    """Huấn luyện LR và DT với 5-fold CV, log kết quả có chọn lọc vào MLflow."""
+def _train_and_log(
+    models: Dict[str, BaseEstimator],
+    alias: str,
+    task: str,
+    include_sex: bool = False,
+) -> None:
+    """Chạy 5-fold CV cho từng model, log MLflow và đăng ký model với alias.
+
+    include_sex=True: bản đối chiếu fairness (Charter mục 1.3) — run có hậu tố "_with_sex",
+    chỉ log metrics & artifact, không đăng ký vào Model Registry.
+    """
     cfg = load_config()
     random_state = cfg.get("random_state", 42)
     target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
 
     setup_mlflow()
     train_df, _, _ = load_split_data()
-    X, y = build_features(train_df, target_col=target_col)
+    X, y = build_features(train_df, target_col=target_col, include_sex=include_sex)
 
-    logger.info("Train size: %d samples, %d features", len(X), X.shape[1])
+    logger.info("Train size: %d samples, %d input columns", len(X), X.shape[1])
 
-    models = get_baseline_models(random_state=random_state)
     data_tags = get_data_version_tags()
 
-    for run_name, estimator in models.items():
+    for model_name, estimator in models.items():
+        run_name = f"{model_name}_with_sex" if include_sex else model_name
         logger.info("=== %s ===", run_name)
         # clone() đảm bảo estimator luôn ở trạng thái mới — tránh mutate instance
-        pipe = make_pipeline(clone(estimator))
+        pipe = make_pipeline(clone(estimator), include_sex=include_sex)
         fold_metrics = run_cv(pipe, X, y, n_splits=N_SPLITS, random_state=random_state)
 
         summary = summarize_folds(fold_metrics)
 
         with mlflow.start_run(run_name=run_name):
             # 1. Params
-            mlflow.log_param("model", run_name)
+            mlflow.log_param("model", model_name)
             mlflow.log_param("n_splits", N_SPLITS)
-            mlflow.log_param("n_features", X.shape[1])
+            mlflow.log_param("n_input_columns", X.shape[1])
             mlflow.log_params(clone(estimator).get_params())
 
             # 2. Metrics — mean & std (chỉ whitelist REPORT_METRICS)
@@ -213,15 +222,12 @@ def train_baseline() -> None:
             tags = {
                 "train_size": len(X),
                 "default_rate": round(float(y.mean()), 4),
-                "feature_strategy": "option_a_all_features",
+                "feature_strategy": "feature_freeze_v1",
+                "include_sex": include_sex,
                 "random_state": random_state,
                 "target_col": target_col,
-                "task": "baseline_cv",
+                "task": task,
                 "threshold_note": "fixed at 0.5, imbalanced data (22% default)",
-                "option_a_note": (
-                    "Categorical features (EDUCATION, MARRIAGE, SEX, PAY_*) treated as numeric; "
-                    "StandardScaler included for uniform pipeline though redundant for DT"
-                ),
             }
             tags.update(data_tags)
             mlflow.set_tags(tags)
@@ -233,20 +239,20 @@ def train_baseline() -> None:
             )
 
             # 5. Model artifact — fit lại toàn bộ train set, thêm signature để MLflow biết input schema.
-            # Giữ registered_model_name và gán alias "baseline".
             pipe.fit(X, y)
             signature = infer_signature(X, pipe.predict_proba(X))
             model_info = mlflow.sklearn.log_model(
                 sk_model=pipe,
                 artifact_path="model",
                 signature=signature,
-                registered_model_name=run_name,
+                registered_model_name=None if include_sex else model_name,
             )
-            MlflowClient().set_registered_model_alias(
-                name=run_name,
-                alias="baseline",
-                version=model_info.registered_model_version,
-            )
+            if not include_sex:
+                MlflowClient().set_registered_model_alias(
+                    name=model_name,
+                    alias=alias,
+                    version=model_info.registered_model_version,
+                )
 
         logger.info(
             "  → AUC: %.4f ± %.4f",
@@ -265,92 +271,23 @@ def train_baseline() -> None:
         )
 
 
-def train_rf_xgboost_default() -> None:
+def train_baseline(include_sex: bool = False) -> None:
+    """Huấn luyện LR và DT với 5-fold CV, đăng ký alias "baseline"."""
+    random_state = load_config().get("random_state", 42)
+    _train_and_log(
+        get_baseline_models(random_state=random_state),
+        alias="baseline",
+        task="baseline_cv",
+        include_sex=include_sex,
+    )
+
+
+def train_rf_xgboost_default(include_sex: bool = False) -> None:
     """Huấn luyện Random Forest và XGBoost với tham số mặc định (Tuần 2 - T2: Member B)."""
-    cfg = load_config()
-    random_state = cfg.get("random_state", 42)
-    target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
-
-    setup_mlflow()
-    train_df, _, _ = load_split_data()
-    X, y = build_features(train_df, target_col=target_col)
-
-    logger.info("Train size: %d samples, %d features", len(X), X.shape[1])
-
-    models = get_advanced_default_models(random_state=random_state)
-    data_tags = get_data_version_tags()
-
-    for run_name, estimator in models.items():
-        logger.info("=== %s ===", run_name)
-        pipe = make_pipeline(clone(estimator))
-        fold_metrics = run_cv(pipe, X, y, n_splits=N_SPLITS, random_state=random_state)
-
-        summary = summarize_folds(fold_metrics)
-
-        with mlflow.start_run(run_name=run_name):
-            # 1. Params
-            mlflow.log_param("model", run_name)
-            mlflow.log_param("n_splits", N_SPLITS)
-            mlflow.log_param("n_features", X.shape[1])
-            mlflow.log_params(clone(estimator).get_params())
-
-            # 2. Metrics — mean & std (whitelist REPORT_METRICS)
-            for metric, (mean, std) in summary.items():
-                mlflow.log_metric(f"{metric}_mean", mean)
-                mlflow.log_metric(f"{metric}_std", std)
-
-            # 3. Per-fold metrics
-            for m in fold_metrics:
-                fold = m["fold"]
-                for k, v in m.items():
-                    if k != "fold":
-                        mlflow.log_metric(f"{k}_fold", v, step=fold)
-
-            # 4. Dataset tags
-            tags = {
-                "train_size": len(X),
-                "default_rate": round(float(y.mean()), 4),
-                "feature_strategy": "option_a_all_features",
-                "random_state": random_state,
-                "target_col": target_col,
-                "task": "rf_xgboost_default_cv",
-                "threshold_note": "fixed at 0.5, imbalanced data (22% default)",
-            }
-            tags.update(data_tags)
-            mlflow.set_tags(tags)
-
-            mlflow.log_dict(
-                {"feature_names": X.columns.tolist()},
-                artifact_file="feature_names.json",
-            )
-
-            # 5. Model artifact & alias
-            pipe.fit(X, y)
-            signature = infer_signature(X, pipe.predict_proba(X))
-            model_info = mlflow.sklearn.log_model(
-                sk_model=pipe,
-                artifact_path="model",
-                signature=signature,
-                registered_model_name=run_name,
-            )
-            MlflowClient().set_registered_model_alias(
-                name=run_name,
-                alias="default",
-                version=model_info.registered_model_version,
-            )
-
-        logger.info(
-            "  → AUC: %.4f ± %.4f",
-            summary["roc_auc"][0],
-            summary["roc_auc"][1],
-        )
-        logger.info(
-            "  → KS:  %.4f ± %.4f",
-            summary["ks"][0],
-            summary["ks"][1],
-        )
-        logger.info(
-            "  → Gini:%.4f ± %.4f\n",
-            summary["gini"][0],
-            summary["gini"][1],
-        )
+    random_state = load_config().get("random_state", 42)
+    _train_and_log(
+        get_advanced_default_models(random_state=random_state),
+        alias="default",
+        task="rf_xgboost_default_cv",
+        include_sex=include_sex,
+    )

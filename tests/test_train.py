@@ -47,12 +47,22 @@ def test_build_features_drops_id_and_target_and_raises_keyerror(dummy_train_df):
         build_features(df_missing_target)
 
 
+def test_build_features_sex_toggle(dummy_train_df):
+    """Mô hình chính thức bỏ SEX; include_sex=True giữ SEX cho bản đối chiếu fairness."""
+    X_official, _ = build_features(dummy_train_df)
+    X_fairness, _ = build_features(dummy_train_df, include_sex=True)
+
+    assert "SEX" not in X_official.columns
+    assert "SEX" in X_fairness.columns
+
+
 def test_make_pipeline_uses_preprocessing_on_raw_columns(dummy_train_df):
     """make_pipeline nhận cột gốc (PAY_0), dùng tiền xử lý của preprocessing.py và encode thêm SEX khi bật."""
     X, y = build_features(dummy_train_df)
+    X_sex, _ = build_features(dummy_train_df, include_sex=True)
 
     pipe = make_pipeline(LogisticRegression(max_iter=300)).fit(X, y)
-    pipe_sex = make_pipeline(LogisticRegression(max_iter=300), include_sex=True).fit(X, y)
+    pipe_sex = make_pipeline(LogisticRegression(max_iter=300), include_sex=True).fit(X_sex, y)
 
     assert "preprocess" in pipe.named_steps
     assert pipe_sex.named_steps["clf"].coef_.shape[1] > pipe.named_steps["clf"].coef_.shape[1]
@@ -252,3 +262,25 @@ def test_train_rf_xgboost_default_mlflow(tmp_path, dummy_train_df, monkeypatch):
         model_version = client.get_model_version_by_alias(name, "default")
         assert model_version is not None
         assert "default" in model_version.aliases
+
+
+def test_train_baseline_with_sex_is_not_registered(tmp_path, dummy_train_df, monkeypatch):
+    """Bản đối chiếu fairness: run có hậu tố _with_sex, tag include_sex và không vào Model Registry."""
+    from mlflow.tracking import MlflowClient
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setattr("src.train.load_split_data", lambda: (dummy_train_df, None, None))
+
+    train_baseline(include_sex=True)
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name("credit_scoring")
+    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+
+    assert {r.data.tags.get("mlflow.runName") for r in runs} == {
+        "logreg_baseline_with_sex",
+        "dt_baseline_with_sex",
+    }
+    assert all(r.data.tags.get("include_sex") == "True" for r in runs)
+    assert client.search_registered_models() == []

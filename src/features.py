@@ -40,13 +40,15 @@ def build_features(
     df: pd.DataFrame,
     target_col: Optional[str] = None,
     drop_cols: Optional[List[str]] = None,
+    include_sex: bool = False,
 ) -> Tuple[pd.DataFrame, pd.Series]:
-    """Tách X và y từ DataFrame thô (Option A: dùng toàn bộ features trừ ID).
+    """Tách X và y từ DataFrame thô (cột gốc; tiền xử lý nằm trong src.pipelines.make_pipeline).
 
     Args:
         df: DataFrame đã được lọc theo split (train / valid / test).
         target_col: Tên cột nhãn (nếu None sẽ đọc từ config data.target_col).
         drop_cols: Danh sách cột bổ sung cần bỏ (mặc định: ["ID"]).
+        include_sex: Nếu False (mô hình chính thức) bỏ SEX; True để đối chiếu fairness.
 
     Returns:
         (X, y): DataFrame đặc trưng và Series nhãn nhị phân (int).
@@ -58,6 +60,8 @@ def build_features(
         target_col = TARGET_COL
     if drop_cols is None:
         drop_cols = DROP_COLS
+    if not include_sex:
+        drop_cols = list(drop_cols) + ["SEX"]
 
     if target_col not in df.columns:
         raise KeyError(f"Không tìm thấy cột nhãn '{target_col}' trong DataFrame.")
