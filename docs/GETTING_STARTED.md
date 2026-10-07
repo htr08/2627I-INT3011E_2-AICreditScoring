@@ -82,32 +82,37 @@ Kết quả phân chia cố định (`random_state=42`):
 ## Bước 4 — Huấn luyện baseline + log MLflow
 
 ```bash
-python scripts/run_pipeline.py
+python scripts/run_pipeline.py                  # baseline: LR & DT
+python scripts/run_pipeline.py --mode advanced  # RF & XGBoost (tham số mặc định)
+python scripts/run_pipeline.py --mode all       # cả hai
+python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness (có SEX, không đăng ký model)
 ```
 *(hoặc `python -m src.train`)*
 
+Mô hình dùng bộ đặc trưng **feature freeze v1** (`configs/feature_freeze_v1.yaml`) qua `src.pipelines.make_pipeline`: làm sạch mã (PAY_0 → PAY_1…) → đặc trưng T2 → bỏ SEX/ID → one-hot + impute/scale. Input là các cột gốc của CSV.
+
 Quá trình:
 1. Đọc `data/raw/UCI_Credit_Card.csv` + `data/splits/splits.json`
-2. Chạy **5-fold Stratified CV** cho Logistic Regression và Decision Tree
+2. Chạy **5-fold Stratified CV** cho Logistic Regression và Decision Tree (và RF, XGBoost với `--mode advanced`)
 3. Log params, metrics (whitelist: `roc_auc`, `gini`, `ks`, `pr_auc`, `brier_score`, `precision`, `recall`, `f1`), tags phiên bản dữ liệu (checksum sha256, hash splits.json), và model artifact kèm signature vào MLflow local (`mlruns/`)
 
 Output terminal:
 
 ```
-Train size: 18000 samples, 23 features
+Train size: 18000 samples, 22 input columns
 
 === logreg_baseline ===
-  Fold 1: AUC=0.7442  KS=0.4199  Gini=0.4884
+  Fold 1: AUC=0.7860  KS=0.4487  Gini=0.5720
   ...
-  → AUC: 0.7278 ± 0.0130
-  → KS:  0.3907 ± 0.0261
-  → Gini:0.4557 ± 0.0261
+  → AUC: 0.7752 ± 0.0120
+  → KS:  0.4276 ± 0.0236
+  → Gini:0.5505 ± 0.0240
 
 === dt_baseline ===
   ...
-  → AUC: 0.7506 ± 0.0107
-  → KS:  0.4136 ± 0.0216
-  → Gini:0.5011 ± 0.0215
+  → AUC: 0.7665 ± 0.0117
+  → KS:  0.4163 ± 0.0185
+  → Gini:0.5330 ± 0.0235
 ```
 
 > ℹ️ `mlruns/` bị gitignore — **mỗi người cần tự chạy lại** bước này trên máy của mình để có runs local. Không cần file `run_registry.json`. Để load model đã train:
@@ -126,7 +131,7 @@ mlflow ui --backend-store-uri ./mlruns
 
 Mở trình duyệt tại: **http://127.0.0.1:5000**
 
-Trong UI, experiment `credit_scoring` hiển thị hai run `logreg_baseline` và `dt_baseline` với đầy đủ params, metrics theo fold và model artifact.
+Trong UI, experiment `credit_scoring` hiển thị các run `logreg_baseline`, `dt_baseline` (và `rf_default`, `xgboost_default` nếu chạy `--mode advanced`) với đầy đủ params, metrics theo fold và model artifact.
 
 > **Dùng server chung của nhóm:** đặt biến môi trường trước khi chạy bất kỳ script nào:
 > ```bash
@@ -144,7 +149,7 @@ Trong UI, experiment `credit_scoring` hiển thị hai run `logreg_baseline` và
 streamlit run app/streamlit_app.py
 ```
 
-> Hiện dùng **mock model** (hệ số đặt tay). Chưa tích hợp model từ MLflow.
+> App nạp baseline Logistic Regression từ MLflow Model Registry (`logreg_baseline@baseline`), được đăng ký bởi `python scripts/run_pipeline.py`. Khi registry chưa có mô hình, app chuyển sang **mock model** (hệ số đặt tay) và hiển thị cảnh báo ở sidebar.
 
 ---
 
