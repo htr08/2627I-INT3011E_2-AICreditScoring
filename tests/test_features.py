@@ -226,7 +226,7 @@ def test_woe_iv_transformer():
     # Check that the WoE values are numeric and not missing.
     assert result["feature"].notna().all()
 
-from src.preprocessing import build_scorecard_pipeline
+from src.pipelines import build_scorecard_pipeline
 
 def test_scorecard_pipeline():
     X = pd.DataFrame({
