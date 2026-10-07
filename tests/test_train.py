@@ -27,8 +27,8 @@ from src.train import REPORT_METRICS, get_cv_splitter, run_cv, summarize_folds, 
 
 @pytest.fixture
 def dummy_train_df():
-    """500 mẫu đúng schema CSV gốc (có PAY_0, SEX) với nhãn có tín hiệu từ PAY_0 và LIMIT_BAL."""
-    return make_raw_credit_df(n=500, seed=42)
+    """1000 mẫu đúng schema CSV gốc (có PAY_0, SEX) với nhãn có tín hiệu từ PAY_0 và LIMIT_BAL."""
+    return make_raw_credit_df(n=1000, seed=42)
 
 
 # 1. Test build_features
