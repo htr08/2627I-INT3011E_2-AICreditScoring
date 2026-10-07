@@ -9,6 +9,7 @@ Bao gồm:
     - create_bill_variation_features: biến động dư nợ (BILL_STD, BILL_DELTA)
     - create_min_payment_features: cờ trả tối thiểu (MIN_PAY_FLAG_1..6, MIN_PAY_FLAG_COUNT)
     - fit_age_bins / transform_age_bins / create_age_bin_features: age binning theo IV
+    - FeatureEngineeringTransformer: gói các hàm trên thành một bước Pipeline
 - Tuần 2 - T3 (WoE & IV Feature Selection):
     - AgeBinningTransformer: Transformer binned AGE dựa trên IV fit từ train
     - WoEIVTransformer: Transformer tính WoE và lọc theo ngưỡng IV
@@ -205,6 +206,35 @@ def create_min_payment_features(
     df["MIN_PAY_FLAG_COUNT"] = df[min_pay_cols].sum(axis=1)
 
     return df
+
+
+# Tên các đặc trưng do FeatureEngineeringTransformer tạo ra (feature freeze v1).
+ENGINEERED_COLUMNS = (
+    [f"UTIL_{i}" for i in range(1, 7)] + ["UTIL_MEAN"]
+    + ["PAY_MEAN", "PAY_MAX", "PAY_SLOPE", "PAY_LATE_CONSECUTIVE", "PAY_LATE_2PLUS_COUNT"]
+    + [f"PAY_RATIO_{i}" for i in range(1, 6)] + ["PAY_RATIO_MEAN"]
+    + ["BILL_STD", "BILL_DELTA"]
+    + [f"MIN_PAY_FLAG_{i}" for i in range(1, 7)] + ["MIN_PAY_FLAG_COUNT"]
+)
+
+
+class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
+    """Gói các hàm tạo đặc trưng Tuần 2 - T2 thành một bước của Pipeline.
+
+    Các hàm này không học tham số từ dữ liệu (stateless) nên không gây leakage.
+    Yêu cầu dữ liệu đã đổi tên PAY_0 -> PAY_1 (AbnormalCodeTransformer chạy trước).
+    """
+
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        X = create_utilization_features(X)
+        X = create_payment_trend_features(X)
+        X = create_payment_ratio_features(X)
+        X = create_bill_variation_features(X)
+        X = create_min_payment_features(X)
+        return X
 
 
 # Calculate Information Value (IV) for a categorical or binned feature.

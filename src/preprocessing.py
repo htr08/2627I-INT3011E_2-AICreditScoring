@@ -1,8 +1,12 @@
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+# Chiều import một chiều: preprocessing -> features. features.py không được import preprocessing.
+from src.features import ENGINEERED_COLUMNS, FeatureEngineeringTransformer
 
 # Danh sách biến phân loại cho mô hình chính thức (không bao gồm SEX theo Charter mục 1.3 & 8)
 CATEGORICAL_COLUMNS = [
@@ -86,32 +90,40 @@ class DropColumnsTransformer(BaseEstimator, TransformerMixin):
         return X.drop(columns=self.columns, errors="ignore")
 
 
-def build_preprocessing_pipeline(drop_sensitive: bool = True):
-    """Xây dựng pipeline tiền xử lý.
+def build_preprocessing_pipeline(drop_sensitive: bool = True, engineered: bool = True):
+    """Xây dựng pipeline tiền xử lý (feature freeze v1).
+
+    Thứ tự: làm sạch mã & đổi tên PAY_0 -> tạo đặc trưng T2 -> bỏ SEX/ID -> encode/scale.
 
     Args:
         drop_sensitive: Nếu True, loại bỏ SEX và ID (mô hình chính thức).
                         Nếu False, giữ SEX để đối chiếu fairness (Charter mục 1.3).
+        engineered: Nếu True, thêm các đặc trưng T2 (ENGINEERED_COLUMNS).
     """
     cat_cols = CATEGORICAL_COLUMNS if drop_sensitive else CATEGORICAL_COLUMNS_WITH_SEX
+    num_cols = NUMERIC_COLUMNS + (ENGINEERED_COLUMNS if engineered else [])
 
     categorical_pipeline = Pipeline([
         ("encoder", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
     ])
 
+    # Một số đặc trưng T2 có NaN (vd PAY_RATIO khi dư nợ <= 0) nên cần impute trước khi scale.
     numeric_pipeline = Pipeline([
-        ("scaler", StandardScaler())
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
     ])
 
     preprocessor = ColumnTransformer(
         [
             ("categorical", categorical_pipeline, cat_cols),
-            ("numeric", numeric_pipeline, NUMERIC_COLUMNS),
+            ("numeric", numeric_pipeline, num_cols),
         ],
         remainder="drop",
     )
 
     steps = [("abnormal_codes", AbnormalCodeTransformer())]
+    if engineered:
+        steps.append(("feature_eng", FeatureEngineeringTransformer()))
     if drop_sensitive:
         steps.append(("drop_sensitive", DropColumnsTransformer(columns=SENSITIVE_COLUMNS)))
     steps.append(("preprocessor", preprocessor))

@@ -159,3 +159,15 @@ def test_preprocessing_pipeline_fairness_mode():
 
     # pipe_with_sex có thêm các feature one-hot của SEX
     assert res_with_sex.shape[1] > res_no_sex.shape[1]
+
+def test_preprocessing_pipeline_engineered_features(raw_credit_df):
+    """Pipeline chạy trên CSV gốc (PAY_0), có thêm đặc trưng T2 và không lỗi NaN."""
+    import numpy as np
+
+    X = raw_credit_df.drop(columns=["default.payment.next.month"])
+
+    res_raw = build_preprocessing_pipeline(engineered=False).fit_transform(X)
+    res_eng = build_preprocessing_pipeline(engineered=True).fit_transform(X)
+
+    assert res_eng.shape[1] > res_raw.shape[1]
+    assert np.isfinite(res_eng).all()
