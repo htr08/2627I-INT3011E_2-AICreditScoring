@@ -70,7 +70,7 @@ def test_rejects_non_linear_pipeline(train):
     ("column", "group"),
     [("PAY_1", DELINQUENCY), ("PAY_SLOPE", DELINQUENCY), ("PAY_AMT3", REPAYMENT), ("PAY_RATIO_2", REPAYMENT),
      ("MIN_PAY_FLAG_COUNT", REPAYMENT), ("BILL_AMT1", UTILIZATION), ("UTIL_MEAN", UTILIZATION),
-     ("LIMIT_BAL", UTILIZATION), ("BILL_STD", BILL_VOLATILITY), ("AGE", DEMOGRAPHICS)],
+     ("LIMIT_BAL", UTILIZATION), ("BILL_STD", BILL_VOLATILITY), ("AGE", DEMOGRAPHICS), ("AGE_BIN", DEMOGRAPHICS)],
 )
 def test_feature_group(column, group):
     assert feature_group(column) == group

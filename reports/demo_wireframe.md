@@ -66,14 +66,14 @@ App chỉ gọi `model.explain(record)`, với đối tượng `Explanation` (đ
 
 ### 3.1. Adapter cho baseline Logistic Regression
 
-`app/baseline_model.py` nạp Pipeline `preprocess → LogisticRegression` (`src.pipelines.make_pipeline`, feature freeze v1) từ MLflow Model Registry (`models:/logreg_baseline@baseline`, do `scripts/run_pipeline.py` đăng ký). Bước `preprocess` gồm làm sạch mã (EDUCATION, MARRIAGE, PAY_0 → PAY_1), đặc trưng T2, bỏ `SEX`/`ID`, one-hot 8 biến phân loại và impute/scale 41 biến số. `load_model()` ưu tiên mô hình này; nếu không nạp được (registry trống, chưa train, thiếu dữ liệu Train), app dùng mock model và hiển thị lỗi ở sidebar. Biến môi trường `DEMO_MODEL=mock` buộc dùng mock model.
+`app/baseline_model.py` nạp Pipeline `preprocess → LogisticRegression` (`src.pipelines.make_pipeline`, feature freeze v1) từ MLflow Model Registry (`models:/logreg_baseline@baseline`, do `scripts/run_pipeline.py` đăng ký). Bước `preprocess` gồm làm sạch mã (EDUCATION, MARRIAGE, PAY_0 → PAY_1), đặc trưng T2, binning `AGE` theo IV (`AGE_BIN`), bỏ `SEX`/`ID`, one-hot 9 biến phân loại và impute/scale 40 biến số. `load_model()` ưu tiên mô hình này; nếu không nạp được (registry trống, chưa train, thiếu dữ liệu Train), app dùng mock model và hiển thị lỗi ở sidebar. Biến môi trường `DEMO_MODEL=mock` buộc dùng mock model.
 
 - **Giải thích:** với mô hình tuyến tính, SHAP interventional trên thang logit tính chính xác bằng `phi_k = coef_k × (z_k − mean_k)`, với `z` là vector sau tiền xử lý và `mean_k` là trung bình trên tập Train (background); base value bằng trung bình logit trên Train. Kết quả trùng với `shap.LinearExplainer`, do đó adapter không phụ thuộc thư viện `shap`. PD do adapter tính khớp với `predict_proba` của pipeline. Background được tính khi nạp mô hình, do đó app yêu cầu `data/raw` và `data/splits`.
-- **Ánh xạ nhóm:** mỗi cột sau one-hot được quy về cột gốc rồi gán nhóm. `PAY_1..6`, `PAY_MEAN`, `PAY_MAX`, `PAY_SLOPE`, `PAY_LATE_*` → Lịch sử trễ hạn; `LIMIT_BAL`, `BILL_AMT*`, `UTIL_*` → Mức sử dụng hạn mức; `PAY_AMT*`, `PAY_RATIO_*`, `MIN_PAY_FLAG_*` → Hành vi trả nợ; `BILL_STD`, `BILL_DELTA` → Biến động dư nợ; `AGE`, `EDUCATION`, `MARRIAGE` → Nhân khẩu học.
+- **Ánh xạ nhóm:** mỗi cột sau one-hot được quy về cột gốc rồi gán nhóm. `PAY_1..6`, `PAY_MEAN`, `PAY_MAX`, `PAY_SLOPE`, `PAY_LATE_*` → Lịch sử trễ hạn; `LIMIT_BAL`, `BILL_AMT*`, `UTIL_*` → Mức sử dụng hạn mức; `PAY_AMT*`, `PAY_RATIO_*`, `MIN_PAY_FLAG_*` → Hành vi trả nợ; `BILL_STD`, `BILL_DELTA` → Biến động dư nợ; `AGE_BIN`, `EDUCATION`, `MARRIAGE` → Nhân khẩu học.
 - **Cột đầu vào:** form và mô hình dùng cùng tên cột (`PAY_1..6`); mô hình chính thức không dùng `SEX` (Charter mục 8) nên form không nhập biến này.
 - **Hiệu chuẩn:** PD của baseline chưa hiệu chuẩn trên tập Valid. Khi có mô hình cuối đã calibrate: với Platt scaling, SHAP (thang margin) cần nhân với hệ số `a` trước khi cộng theo nhóm; với Isotonic, tính cộng tính không còn đúng và cần ghi chú rõ trong app.
 
-Kết quả với 3 hồ sơ mẫu trên baseline thật (feature freeze v1): Rủi ro thấp PD 7.4% (560 điểm), Ca biên 19.9% (527 điểm), Rủi ro cao 71.3% (461 điểm). Hồ sơ Ca biên có một tháng trễ 2 kỳ (T8), nằm trong vùng 🟡 Theo dõi ở ngưỡng 0,30 trên cả baseline và mock model.
+Kết quả với 3 hồ sơ mẫu trên baseline thật (feature freeze v1): Rủi ro thấp PD 7.4% (560 điểm), Ca biên 19.1% (529 điểm), Rủi ro cao 71.1% (461 điểm). Hồ sơ Ca biên có một tháng trễ 2 kỳ (T8), nằm trong vùng 🟡 Theo dõi ở ngưỡng 0,30 trên cả baseline và mock model.
 
 ## 4. Việc còn mở
 
@@ -81,4 +81,3 @@ Kết quả với 3 hồ sơ mẫu trên baseline thật (feature freeze v1): R�
 - Dải hiển thị thanh điểm (420–640) và tham số PDO cần nhóm thống nhất trước khi đưa vào `configs/config.yaml`.
 - Các con số trên wireframe ở mục 1 lấy từ mock model, chỉ để minh họa bố cục.
 - Adapter hiện chỉ hỗ trợ Logistic Regression. Mô hình cuối dạng cây (XGBoost/LightGBM) cần adapter dùng TreeExplainer.
-- Pipeline freeze v1 dùng `AGE` liên tục; Charter mục 8 cho phép `AGE` ở dạng binning, cần thống nhất với A/B trước khi chốt mô hình cuối.

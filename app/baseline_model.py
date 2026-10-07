@@ -36,7 +36,7 @@ def feature_group(column: str) -> str:
         return BILL_VOLATILITY
     if column == "LIMIT_BAL" or column.startswith(("BILL_AMT", "UTIL_")):
         return UTILIZATION
-    if column in {"AGE", "EDUCATION", "MARRIAGE", "SEX"}:
+    if column in {"AGE", "AGE_BIN", "EDUCATION", "MARRIAGE", "SEX"}:
         return DEMOGRAPHICS
     raise ValueError(f"Chưa gán nhóm đặc trưng cho cột '{column}'.")
 
