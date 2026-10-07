@@ -264,6 +264,29 @@ def test_woe_iv_transformer_categorical():
     assert result["education"].notna().all()
 
 
+# Values outside the training range must fall into the first/last bin, not WoE = 0.
+def test_woe_out_of_range_uses_edge_bins():
+    X = pd.DataFrame({"feature": list(range(1, 21))})
+    y = pd.Series([0] * 10 + [1] * 10)
+
+    transformer = WoEIVTransformer(n_bins=2, iv_threshold=0.0).fit(X, y)
+    edge_woe = transformer.transform(pd.DataFrame({"feature": [1, 20]}))["feature"].tolist()
+    outside_woe = transformer.transform(pd.DataFrame({"feature": [-100, 1000]}))["feature"].tolist()
+
+    assert outside_woe == edge_woe
+    assert all(w != 0 for w in outside_woe)
+
+
+def test_age_bins_cover_out_of_range_ages():
+    X_train = pd.DataFrame({"AGE": [20, 22, 25, 28, 30, 32, 35, 40, 45, 50]})
+    y_train = pd.Series([0, 0, 1, 0, 1, 1, 0, 1, 1, 1])
+
+    edges = fit_age_bins(X_train, y_train)
+    result = transform_age_bins(pd.DataFrame({"AGE": [18, 80]}), edges)
+
+    assert result["AGE_BIN"].notna().all()
+
+
 def test_feature_engineering_transformer_adds_engineered_columns(raw_credit_df):
     from src.preprocessing import AbnormalCodeTransformer
 

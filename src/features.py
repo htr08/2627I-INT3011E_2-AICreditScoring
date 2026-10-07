@@ -237,6 +237,14 @@ class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
         return X
 
 
+def _open_edges(edges: np.ndarray) -> np.ndarray:
+    """Mở rộng biên ngoài cùng thành -inf/+inf để giá trị ngoài khoảng Train
+    rơi vào bin đầu/cuối thay vì thành NaN (WoE = 0)."""
+    edges = np.asarray(edges, dtype=float).copy()
+    edges[0], edges[-1] = -np.inf, np.inf
+    return edges
+
+
 # Calculate Information Value (IV) for a categorical or binned feature.
 def calculate_iv(
     feature: pd.Series,
@@ -309,7 +317,7 @@ def fit_age_bins(
     if best_edges is None:
         raise ValueError("Unable to create age bins from training data.")
 
-    return best_edges
+    return _open_edges(best_edges)
 
 
 # Apply age bins learned from the training data.
@@ -417,6 +425,7 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
                     edges = np.unique(edges)
                     if len(edges) < 2:
                         continue
+                    edges = _open_edges(edges)
                     bins = pd.cut(
                         X[col],
                         bins=edges,
