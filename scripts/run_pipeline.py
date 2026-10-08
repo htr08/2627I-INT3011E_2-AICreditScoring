@@ -33,7 +33,7 @@ from src.pipelines import (
     build_scorecard_pipeline,
 )
 from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, SENSITIVE_COLUMNS
-from src.train import train_baseline, train_rf_xgboost_default
+from src.train import train_baseline, train_rf_xgboost_default, train_scorecard
 
 FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
@@ -96,7 +96,7 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "all", "woe"],
+        choices=["baseline", "advanced", "all", "scorecard", "woe"],
         default="baseline",
         help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'all' or 'woe'",
     )
@@ -125,6 +125,8 @@ def main():
             train_baseline(include_sex=args.include_sex)
         if args.mode in ("advanced", "all"):
             train_rf_xgboost_default(include_sex=args.include_sex)
+        if args.mode == "scorecard":
+            train_scorecard(include_sex=args.include_sex)
 
 
 if __name__ == "__main__":
