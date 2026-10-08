@@ -25,7 +25,7 @@ from src.config import load_config
 from src.data_split import load_split_data
 from src.evaluate import evaluate_predictions
 from src.features import build_features
-from src.pipelines import make_pipeline
+from src.pipelines import make_pipeline, build_scorecard_pipeline
 from src.tracking import setup_mlflow
 
 logger = logging.getLogger(__name__)
@@ -290,4 +290,52 @@ def train_rf_xgboost_default(include_sex: bool = False) -> None:
         alias="default",
         task="rf_xgboost_default_cv",
         include_sex=include_sex,
+    )
+
+def train_scorecard(include_sex: bool = False) -> None:
+    """Huấn luyện Logistic Scorecard (WoE) với 5-fold CV."""
+    cfg = load_config()
+    random_state = cfg.get("random_state", 42)
+    target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
+
+    train_df, _, _ = load_split_data()
+    X, y = build_features(
+        train_df,
+        target_col=target_col,
+        include_sex=include_sex,
+    )
+
+    logger.info("=== logistic_scorecard ===")
+    logger.info(
+        "Train size: %d samples, %d input columns",
+        len(X),
+        X.shape[1],
+    )
+
+    pipe = build_scorecard_pipeline(drop_sensitive=not include_sex)
+
+    fold_metrics = run_cv(
+        pipe,
+        X,
+        y,
+        n_splits=N_SPLITS,
+        random_state=random_state,
+    )
+
+    summary = summarize_folds(fold_metrics)
+
+    logger.info(
+        "  → Scorecard AUC: %.4f ± %.4f",
+        summary["roc_auc"][0],
+        summary["roc_auc"][1],
+    )
+    logger.info(
+        "  → Scorecard KS:  %.4f ± %.4f",
+        summary["ks"][0],
+        summary["ks"][1],
+    )
+    logger.info(
+        "  → Scorecard Gini: %.4f ± %.4f",
+        summary["gini"][0],
+        summary["gini"][1],
     )
