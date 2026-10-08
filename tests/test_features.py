@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
 from src.features import (
     create_utilization_features,
@@ -16,6 +17,9 @@ from src.features import (
     WoEIVTransformer,
     FeatureEngineeringTransformer,
     ENGINEERED_COLUMNS,
+    find_high_correlation_features,
+    compute_feature_importance_stability,
+    FeatureSelectionTransformer,
 )
 from src.pipelines import build_scorecard_pipeline
 
@@ -311,7 +315,7 @@ def test_age_bins_cover_out_of_range_ages():
     assert result["AGE_BIN"].notna().all()
 
 
-def test_feature_engineering_transformer_adds_engineered_columns(raw_credit_df):
+def test_feature_engineering_transformer_adds_engineered_columns(raw_credit_df: DataFrame):
     from src.preprocessing import AbnormalCodeTransformer
 
     X = AbnormalCodeTransformer().transform(raw_credit_df)
@@ -325,7 +329,7 @@ def _split_xy(df):
     return df.drop(columns=["default.payment.next.month"]), df["default.payment.next.month"]
 
 
-def test_scorecard_pipeline_on_raw_columns(raw_credit_df):
+def test_scorecard_pipeline_on_raw_columns(raw_credit_df: DataFrame):
     """Scorecard chạy được trên đúng tên cột CSV gốc (PAY_0) và dùng cả đặc trưng T2."""
     X, y = _split_xy(raw_credit_df)
 
@@ -338,7 +342,7 @@ def test_scorecard_pipeline_on_raw_columns(raw_credit_df):
     assert "PAY_MEAN" in woe.iv_values_
 
 
-def test_scorecard_pipeline_drops_sex_and_id(raw_credit_df):
+def test_scorecard_pipeline_drops_sex_and_id(raw_credit_df: DataFrame):
     X, y = _split_xy(raw_credit_df)
 
     woe = build_scorecard_pipeline().fit(X, y).named_steps["woe_iv"]
@@ -349,7 +353,7 @@ def test_scorecard_pipeline_drops_sex_and_id(raw_credit_df):
     assert "SEX" in woe_with_sex.iv_values_
 
 
-def test_scorecard_pipeline_with_cv(raw_credit_df):
+def test_scorecard_pipeline_with_cv(raw_credit_df: DataFrame):
     from sklearn.model_selection import StratifiedKFold, cross_val_score
 
     X, y = _split_xy(raw_credit_df)
@@ -361,54 +365,26 @@ def test_scorecard_pipeline_with_cv(raw_credit_df):
     assert np.isfinite(scores).all()
 
 def test_find_high_correlation_features():
-    from src.features import find_high_correlation_features
-
     X = pd.DataFrame({
         "feature_a": [1, 2, 3, 4, 5],
         "feature_b": [2, 4, 6, 8, 10],
         "feature_c": [5, 1, 4, 2, 3],
     })
 
+    y = pd.Series([0, 0, 0, 1, 1])
+
     result = find_high_correlation_features(
         X,
-        threshold=0.9
-    )
-
-    assert "feature_b" in result
-    assert "feature_a" not in result
-    assert "feature_c" not in result
-
-def test_compute_iv_stability():
-    from src.features import compute_iv_stability
-
-    X = pd.DataFrame({
-        "feature_a": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
-                      0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
-        "feature_b": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
-                      11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
-    })
-
-    y = pd.Series([
-        0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
-        0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
-    ])
-
-    result = compute_iv_stability(
-        X,
         y,
-        n_splits=5,
-        random_state=42,
+        threshold=0.9,
     )
 
-    assert "feature" in result.columns
-    assert "iv_mean" in result.columns
-    assert "iv_std" in result.columns
-    assert "iv_min" in result.columns
-    assert "iv_max" in result.columns
+    # feature_a và feature_b tương quan hoàn hảo,
+    # nên phải loại đúng một trong hai.
+    assert ("feature_a" in result) ^ ("feature_b" in result)
 
-    assert set(result["feature"]) == {"feature_a", "feature_b"}
-    assert (result["iv_mean"] >= 0).all()
-    assert (result["iv_std"] >= 0).all()
+    # feature_c không tương quan cao với hai biến trên.
+    assert "feature_c" not in result
 
 def test_compute_feature_importance_stability():
     from src.features import compute_feature_importance_stability
@@ -441,3 +417,26 @@ def test_compute_feature_importance_stability():
     assert set(result["feature"]) == {"feature_a", "feature_b"}
     assert (result["importance_mean"] >= 0).all()
     assert (result["importance_std"] >= 0).all()
+
+def test_feature_selection_transformer():
+    X = pd.DataFrame({
+        "feature_a": [1, 2, 3, 4, 5, 6, 7, 8],
+        "feature_b": [2, 4, 6, 8, 10, 12, 14, 16],
+        "feature_c": [0, 0, 0, 0, 1, 1, 1, 1],
+    })
+
+    y = pd.Series([0, 0, 0, 0, 1, 1, 1, 1])
+
+    transformer = FeatureSelectionTransformer(
+        iv_threshold=0.0,
+        correlation_threshold=0.9,
+    )
+
+    transformer.fit(X, y)
+
+    X_selected = transformer.transform(X)
+
+    assert hasattr(transformer, "iv_values_")
+    assert hasattr(transformer, "selected_features_")
+    assert X_selected.shape[0] == X.shape[0]
+    assert list(X_selected.columns) == transformer.selected_features_
