@@ -483,3 +483,270 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
             result[col] = pd.to_numeric(mapped, errors="coerce").fillna(0.0)
 
         return result
+
+def prepare_feature_selection_data(
+    X: pd.DataFrame,
+) -> pd.DataFrame:
+    """Chuẩn bị feature set cho feature selection.
+
+    Nếu X là dữ liệu credit scoring gốc thì thực hiện feature engineering.
+    Nếu X là DataFrame đơn giản dùng cho unit test hoặc đã được feature
+    engineering thì giữ nguyên.
+    """
+    X = X.copy()
+
+    # Dataset credit scoring gốc phải có LIMIT_BAL và BILL_AMT1.
+    # Nếu không có các cột này thì đây không phải raw credit dataset,
+    # nên giữ nguyên để các hàm feature selection vẫn dùng được độc lập.
+    is_credit_dataset = (
+        "LIMIT_BAL" in X.columns
+        and "BILL_AMT1" in X.columns
+    )
+
+    if not is_credit_dataset:
+        return X
+
+    # Dataset gốc dùng PAY_0, trong khi feature engineering
+    # sử dụng PAY_1..PAY_6.
+    if "PAY_0" in X.columns and "PAY_1" not in X.columns:
+        X = X.rename(columns={"PAY_0": "PAY_1"})
+
+    X = FeatureEngineeringTransformer().fit_transform(X)
+
+    return X
+
+def find_high_correlation_features(
+    X: pd.DataFrame,
+    threshold: float = 0.9
+) -> List[str]:
+    """Tìm các biến có tương quan tuyệt đối cao hơn threshold.
+
+    Với mỗi cặp biến tương quan cao, giữ biến xuất hiện trước
+    và đánh dấu biến xuất hiện sau để loại bỏ.
+    """
+    X = prepare_feature_selection_data(X)
+
+    numeric_X = X.select_dtypes(include=[np.number])
+
+    corr_matrix = numeric_X.corr().abs()
+
+    upper = corr_matrix.where(
+        np.triu(
+            np.ones(corr_matrix.shape),
+            k=1
+        ).astype(bool)
+    )
+
+    to_drop = [
+        column
+        for column in upper.columns
+        if any(upper[column] > threshold)
+    ]
+
+    return to_drop
+
+
+def compute_iv_stability(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """Tính IV của từng feature trên từng fold và tổng hợp độ ổn định.
+
+    Feature engineering được thực hiện trước khi tính IV.
+
+    Returns:
+        DataFrame gồm:
+        - feature
+        - iv_mean
+        - iv_std
+        - iv_min
+        - iv_max
+    """
+    from sklearn.model_selection import StratifiedKFold
+
+    X = X.reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+
+    X = prepare_feature_selection_data(X)
+
+    cv = StratifiedKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
+
+    fold_ivs = []
+
+    for fold, (train_idx, _) in enumerate(
+        cv.split(X, y),
+        start=1
+    ):
+        X_fold = X.iloc[train_idx]
+        y_fold = y.iloc[train_idx]
+
+        transformer = WoEIVTransformer(
+            n_bins=5,
+            iv_threshold=0.0,
+        )
+
+        transformer.fit(
+            X_fold,
+            y_fold
+        )
+
+        fold_iv = transformer.iv_values_.copy()
+        fold_iv["__fold__"] = fold
+
+        fold_ivs.append(fold_iv)
+
+    iv_df = (
+        pd.DataFrame(fold_ivs)
+        .set_index("__fold__")
+        .T
+    )
+
+    iv_df.columns = [
+        f"fold_{i}"
+        for i in range(1, n_splits + 1)
+    ]
+
+    result = pd.DataFrame(index=iv_df.index)
+
+    result["iv_mean"] = iv_df.mean(axis=1)
+    result["iv_std"] = iv_df.std(axis=1).fillna(0.0)
+    result["iv_min"] = iv_df.min(axis=1)
+    result["iv_max"] = iv_df.max(axis=1)
+
+    result.index.name = "feature"
+
+    return result.reset_index()
+
+
+def compute_feature_importance_stability(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+    random_state: int = 42,
+) -> pd.DataFrame:
+    """Đánh giá độ ổn định của feature importance qua các fold CV.
+
+    Feature engineering được thực hiện trước khi đánh giá.
+
+    Logistic Regression được sử dụng và importance được lấy
+    từ trị tuyệt đối của hệ số hồi quy sau khi chuẩn hóa.
+
+    Returns:
+        DataFrame gồm:
+        - feature
+        - importance_mean
+        - importance_std
+        - importance_min
+        - importance_max
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.preprocessing import StandardScaler
+
+    X = X.copy()
+    y = pd.Series(y).reset_index(drop=True)
+    X = X.reset_index(drop=True)
+
+    X = prepare_feature_selection_data(X)
+
+    # Chỉ sử dụng biến số.
+    X_numeric = X.select_dtypes(
+        include=[np.number]
+    )
+
+    # Thay thế giá trị vô hạn và xử lý missing.
+    X_numeric = X_numeric.replace(
+        [np.inf, -np.inf],
+        np.nan
+    )
+
+    X_numeric = X_numeric.fillna(
+        X_numeric.median()
+    )
+
+    cv = StratifiedKFold(
+        n_splits=n_splits,
+        shuffle=True,
+        random_state=random_state,
+    )
+
+    fold_importances = []
+
+    for fold, (train_idx, _) in enumerate(
+        cv.split(X_numeric, y),
+        start=1
+    ):
+        X_train = X_numeric.iloc[train_idx]
+        y_train = y.iloc[train_idx]
+
+        scaler = StandardScaler()
+
+        X_train_scaled = scaler.fit_transform(
+            X_train
+        )
+
+        model = LogisticRegression(
+            max_iter=1000,
+            random_state=random_state,
+        )
+
+        model.fit(
+            X_train_scaled,
+            y_train
+        )
+
+        importance = np.abs(
+            model.coef_[0]
+        )
+
+        fold_importances.append(
+            pd.Series(
+                importance,
+                index=X_numeric.columns,
+                name=f"fold_{fold}",
+            )
+        )
+
+    importance_df = pd.DataFrame(
+        fold_importances
+    )
+
+    result = pd.DataFrame({
+        "feature": importance_df.columns,
+        "importance_mean": (
+            importance_df
+            .mean(axis=0)
+            .values
+        ),
+        "importance_std": (
+            importance_df
+            .std(axis=0)
+            .fillna(0.0)
+            .values
+        ),
+        "importance_min": (
+            importance_df
+            .min(axis=0)
+            .values
+        ),
+        "importance_max": (
+            importance_df
+            .max(axis=0)
+            .values
+        ),
+    })
+
+    return (
+        result
+        .sort_values(
+            "importance_mean",
+            ascending=False,
+        )
+        .reset_index(drop=True)
+    )

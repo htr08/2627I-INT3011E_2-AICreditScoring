@@ -360,3 +360,84 @@ def test_scorecard_pipeline_with_cv(raw_credit_df):
     assert len(scores) == 5
     assert np.isfinite(scores).all()
 
+def test_find_high_correlation_features():
+    from src.features import find_high_correlation_features
+
+    X = pd.DataFrame({
+        "feature_a": [1, 2, 3, 4, 5],
+        "feature_b": [2, 4, 6, 8, 10],
+        "feature_c": [5, 1, 4, 2, 3],
+    })
+
+    result = find_high_correlation_features(
+        X,
+        threshold=0.9
+    )
+
+    assert "feature_b" in result
+    assert "feature_a" not in result
+    assert "feature_c" not in result
+
+def test_compute_iv_stability():
+    from src.features import compute_iv_stability
+
+    X = pd.DataFrame({
+        "feature_a": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
+                      0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        "feature_b": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                      11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
+        0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    ])
+
+    result = compute_iv_stability(
+        X,
+        y,
+        n_splits=5,
+        random_state=42,
+    )
+
+    assert "feature" in result.columns
+    assert "iv_mean" in result.columns
+    assert "iv_std" in result.columns
+    assert "iv_min" in result.columns
+    assert "iv_max" in result.columns
+
+    assert set(result["feature"]) == {"feature_a", "feature_b"}
+    assert (result["iv_mean"] >= 0).all()
+    assert (result["iv_std"] >= 0).all()
+
+def test_compute_feature_importance_stability():
+    from src.features import compute_feature_importance_stability
+
+    X = pd.DataFrame({
+        "feature_a": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
+                      0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        "feature_b": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                      11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
+        0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    ])
+
+    result = compute_feature_importance_stability(
+        X,
+        y,
+        n_splits=5,
+        random_state=42,
+    )
+
+    assert "feature" in result.columns
+    assert "importance_mean" in result.columns
+    assert "importance_std" in result.columns
+    assert "importance_min" in result.columns
+    assert "importance_max" in result.columns
+
+    assert set(result["feature"]) == {"feature_a", "feature_b"}
+    assert (result["importance_mean"] >= 0).all()
+    assert (result["importance_std"] >= 0).all()
