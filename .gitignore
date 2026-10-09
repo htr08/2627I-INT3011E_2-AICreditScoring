@@ -19,6 +19,7 @@ env/
 *.csv
 !reports/iv_stability.csv
 !reports/feature_importance.csv
+!reports/correlation_drop.csv
 *.tsv
 *.xls
 *.xlsx
