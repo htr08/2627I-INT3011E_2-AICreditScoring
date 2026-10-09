@@ -87,6 +87,8 @@ python scripts/run_pipeline.py --mode advanced  # RF & XGBoost (tham số mặc 
 python scripts/run_pipeline.py --mode boosting  # LightGBM & CatBoost (tham số mặc định)
 python scripts/run_pipeline.py --mode imbalance # Thử nghiệm class_weight và SMOTE in-fold
 python scripts/run_pipeline.py --mode all       # Toàn bộ các mô hình trên
+python scripts/run_pipeline.py --mode tune      # Optuna: LightGBM (± monotonic), CatBoost (~1 giờ)
+python scripts/run_pipeline.py --mode tune --tune-model lightgbm --max-trials 5   # chạy thử nhanh
 python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness (có SEX, không đăng ký model)
 ```
 *(hoặc `python -m src.train`)*

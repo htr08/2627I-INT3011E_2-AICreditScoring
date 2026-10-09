@@ -17,6 +17,22 @@ mlflow:
   tracking_dir: mlruns
   experiment_name: credit_scoring
 
+# Tuning Optuna (Tuần 2 – T4). Điều kiện dừng theo Project Charter mục 1.3:
+# dừng khi CV ROC-AUC không cải thiện quá min_delta sau `patience` trial liên tiếp,
+# hoặc hết ngân sách timeout_seconds (2 giờ) cho mỗi mô hình.
+tuning:
+  n_splits: 5
+  patience: 30
+  min_delta: 0.002
+  timeout_seconds: 7200
+  max_trials: 500           # chặn trên an toàn, điều kiện dừng chính là patience/timeout
+  pruner_startup_trials: 10
+  pruner_warmup_folds: 2
+  # Biến numeric ràng buộc đơn điệu tăng theo rủi ro (biến trễ hạn và tỷ lệ sử dụng hạn mức).
+  # PAY_1..PAY_6 được one-hot theo feature freeze v1 nên không áp dụng được ràng buộc.
+  monotone_increasing: [PAY_MEAN, PAY_MAX, PAY_LATE_CONSECUTIVE, PAY_LATE_2PLUS_COUNT,
+                        UTIL_1, UTIL_2, UTIL_3, UTIL_4, UTIL_5, UTIL_6, UTIL_MEAN]
+
 # Nhóm đặc trưng dùng cho reason codes và so sánh đồng thuận giữa các mô hình
 # (project_plan.md mục 3.5e). Khóa là tên biến gốc (trước one-hot), mỗi biến thuộc đúng một nhóm.
 # Phải khớp với configs/feature_freeze_v1.yaml (kiểm tra bằng src.explain.check_groups_cover).
