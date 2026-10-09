@@ -9,6 +9,8 @@ Usage:
     python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
     python scripts/run_pipeline.py --mode scorecard   # Logistic Scorecard (WoE): 5-fold CV + MLflow + bảng điểm
     python scripts/run_pipeline.py --mode scorecard --feature-selection   # Thí nghiệm lọc IV + tương quan
+    python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
+    python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
 """
 
 import argparse
@@ -59,6 +61,7 @@ from src.train import (
     train_rf_xgboost_default,
     train_scorecard,
 )
+from src.tune import TUNABLE_MODELS, tune_best_models, tune_model
 
 FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
@@ -157,9 +160,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe' or 'scorecard'",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard' or 'tune' (Optuna)",
     )
     parser.add_argument(
         "--include-sex",
@@ -176,6 +179,14 @@ def main():
         action="store_true",
         help="(mode scorecard) Thêm bước lọc IV + tương quan trong từng fold (thí nghiệm, không đăng ký model)",
     )
+    parser.add_argument(
+        "--tune-model",
+        choices=TUNABLE_MODELS,
+        help="(mode tune) Chỉ tuning một mô hình; bỏ trống để chạy kế hoạch đầy đủ trong src.tune.tune_best_models",
+    )
+    parser.add_argument("--monotone", action="store_true", help="(mode tune + --tune-model) Bật monotonic constraints")
+    parser.add_argument("--max-trials", type=int, help="(mode tune) Ghi đè tuning.max_trials trong config")
+    parser.add_argument("--timeout", type=float, help="(mode tune) Ghi đè tuning.timeout_seconds trong config")
     args = parser.parse_args()
 
     logging.basicConfig(
@@ -188,6 +199,11 @@ def main():
         run_woe_pipeline(write_freeze=args.freeze)
     elif args.mode == "scorecard":
         train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
+    elif args.mode == "tune":
+        if args.tune_model:
+            tune_model(args.tune_model, monotone=args.monotone, max_trials=args.max_trials, timeout=args.timeout)
+        else:
+            tune_best_models(max_trials=args.max_trials, timeout=args.timeout)
     else:
         if args.mode in ("baseline", "all"):
             train_baseline(include_sex=args.include_sex)

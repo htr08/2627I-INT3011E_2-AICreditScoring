@@ -89,6 +89,8 @@ python scripts/run_pipeline.py --mode imbalance # Thử nghiệm class_weight v�
 python scripts/run_pipeline.py --mode all       # Toàn bộ các mô hình trên
 python scripts/run_pipeline.py --mode woe       # IV, tương quan, độ ổn định IV/importance → reports/*.csv
 python scripts/run_pipeline.py --mode scorecard # Logistic Scorecard (WoE): CV + MLflow + bảng điểm
+python scripts/run_pipeline.py --mode tune      # Optuna: LightGBM (± monotonic), CatBoost (~1 giờ)
+python scripts/run_pipeline.py --mode tune --tune-model lightgbm --max-trials 5   # chạy thử nhanh
 python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness (có SEX, không đăng ký model)
 ```
 *(hoặc `python -m src.train`)*
