@@ -11,6 +11,7 @@ Task: Tuần 2 – T4 (thành viên B).
 
 Chạy chính thức:
     python scripts/run_pipeline.py --mode tune
+    python scripts/run_pipeline.py --mode tuned --include-sex   # Tuần 2 – T5: phiên bản có SEX
 """
 
 import logging
@@ -21,12 +22,13 @@ import mlflow
 import mlflow.sklearn
 import numpy as np
 import optuna
+import yaml
 from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 from sklearn.base import BaseEstimator, clone
 from sklearn.pipeline import Pipeline
 
-from src.config import load_config
+from src.config import PROJECT_ROOT, load_config
 from src.data_split import load_split_data
 from src.evaluate import evaluate_predictions
 from src.features import build_features
@@ -37,6 +39,9 @@ from src.tracking import setup_mlflow
 logger = logging.getLogger(__name__)
 
 TUNABLE_MODELS = ("lightgbm", "catboost")
+TUNED_PARAMS_PATH = PROJECT_ROOT / "configs" / "tuned_params.yaml"
+# Hai ứng viên mô hình cuối (reports/experiments_optuna_tuning.md mục 7).
+FINAL_CANDIDATES = ("lightgbm_monotone", "catboost")
 
 
 # ---------------------------------------------------------------------------
@@ -139,16 +144,22 @@ def monotone_vector(feature_names: Sequence[str], increasing: Sequence[str]) -> 
 # Cross-validation trên fold đã tiền xử lý sẵn
 # ---------------------------------------------------------------------------
 
-def prepare_folds(X, y, n_splits: int = 5, random_state: int = 42) -> List[Dict[str, Any]]:
+def prepare_folds(
+    X, y, n_splits: int = 5, random_state: int = 42, include_sex: bool = False
+) -> List[Dict[str, Any]]:
     """Fit tiền xử lý trên phần train của từng fold, transform phần val; trả về cache dùng chung.
 
-    Cùng StratifiedKFold (random_state) với run_cv nên kết quả so sánh được với T2/T3.
+    Cùng StratifiedKFold (random_state) với run_cv nên kết quả so sánh được với T2/T3. Chia fold chỉ
+    phụ thuộc y, nên bản có và không có SEX dùng đúng cùng 5 fold (so sánh từng cặp được).
+    include_sex: True giữ SEX (one-hot) cho bản đối chiếu fairness (Charter mục 1.3).
     """
     folds = []
     for fold, (tr_idx, val_idx) in enumerate(
         get_cv_splitter(random_state=random_state, n_splits=n_splits).split(X, y), start=1
     ):
-        prep = build_preprocessing_pipeline().fit(X.iloc[tr_idx], y.iloc[tr_idx])
+        prep = build_preprocessing_pipeline(drop_sensitive=not include_sex).fit(
+            X.iloc[tr_idx], y.iloc[tr_idx]
+        )
         folds.append({
             "fold": fold,
             "X_train": prep.transform(X.iloc[tr_idx]),
@@ -238,9 +249,10 @@ def _fit_final_pipeline(
     y,
     monotone_features: Optional[Sequence[str]],
     random_state: int,
+    include_sex: bool = False,
 ) -> Pipeline:
     """Fit tiền xử lý + mô hình trên toàn bộ Train; clf là estimator gốc (dùng được TreeExplainer)."""
-    prep = build_preprocessing_pipeline().fit(X, y)
+    prep = build_preprocessing_pipeline(drop_sensitive=not include_sex).fit(X, y)
     names = prep.named_steps["preprocessor"].get_feature_names_out()
     constraints = monotone_vector(names, monotone_features) if monotone_features else None
     clf = build_estimator(model_name, params, random_state, constraints)
@@ -439,3 +451,126 @@ def tune_best_models(max_trials: Optional[int] = None, timeout: Optional[float] 
         tune_model("lightgbm", monotone=True, max_trials=max_trials, timeout=timeout),
         tune_model("catboost", monotone=False, max_trials=max_trials, timeout=timeout),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Huấn luyện lại mô hình đã tuning (không chạy Optuna) — Tuần 2 – T5
+# ---------------------------------------------------------------------------
+
+def load_tuned_params(study_name: str, path=TUNED_PARAMS_PATH) -> Dict[str, Any]:
+    """Đọc model, monotone, params của một study từ configs/tuned_params.yaml."""
+    with open(path, encoding="utf-8") as f:
+        tuned = yaml.safe_load(f)
+    if study_name not in tuned:
+        raise KeyError(f"Không có study {study_name!r} trong {path}. Có: {sorted(tuned)}")
+    return tuned[study_name]
+
+
+def sex_importance_share(pipe: Pipeline) -> float:
+    """Tỷ trọng tầm quan trọng (gain / PredictionValuesChange) của các cột SEX trong mô hình đã fit."""
+    names = list(pipe.named_steps["preprocess"].named_steps["preprocessor"].get_feature_names_out())
+    clf = pipe.named_steps["clf"]
+    if hasattr(clf, "booster_"):
+        importance = clf.booster_.feature_importance(importance_type="gain")
+    else:
+        importance = clf.get_feature_importance()
+    importance = np.asarray(importance, dtype=float)
+    is_sex = np.array([n.startswith("categorical__SEX_") for n in names])
+    return float(importance[is_sex].sum() / importance.sum()) if importance.sum() > 0 else 0.0
+
+
+def train_tuned(
+    studies: Sequence[str] = FINAL_CANDIDATES,
+    include_sex: bool = True,
+) -> List[Dict[str, Any]]:
+    """Huấn luyện lại các mô hình đã tuning với bộ tham số trong configs/tuned_params.yaml.
+
+    include_sex=True (Tuần 2 – T5): phiên bản có SEX để đối chiếu fairness. CV 5-fold trên cùng
+    fold với bản không có SEX, log chênh lệch theo từng fold (sex_effect_*) và tỷ trọng tầm quan
+    trọng của SEX. Mô hình fit trên toàn bộ Train được log artifact, không đăng ký Model Registry
+    (cùng quy ước với các run _with_sex khác).
+    """
+    cfg = load_config()
+    random_state = cfg.get("random_state", 42)
+    target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
+    increasing = cfg["tuning"]["monotone_increasing"]
+    n_splits = cfg["tuning"]["n_splits"]
+
+    setup_mlflow()
+    train_df, _, _ = load_split_data()
+    X_base, y = build_features(train_df, target_col=target_col, include_sex=False)
+    folds_base = prepare_folds(X_base, y, n_splits=n_splits, random_state=random_state)
+    if include_sex:
+        X, _ = build_features(train_df, target_col=target_col, include_sex=True)
+        folds = prepare_folds(X, y, n_splits=n_splits, random_state=random_state, include_sex=True)
+    else:
+        X, folds = X_base, folds_base
+
+    results = []
+    for study_name in studies:
+        tuned = load_tuned_params(study_name)
+        model_name, params = tuned["model"], tuned["params"]
+        monotone_features = increasing if tuned["monotone"] else None
+        run_name = f"{study_name}_tuned" + ("_with_sex" if include_sex else "")
+        logger.info("=== %s ===", run_name)
+
+        start = time.time()
+        fold_metrics = cv_score(model_name, params, folds, monotone_features, random_state)
+        with mlflow.start_run(run_name=run_name):
+            mlflow.log_params({
+                "model": model_name,
+                "study": study_name,
+                "monotone": tuned["monotone"],
+                "n_splits": n_splits,
+                **params,
+            })
+            summary = _log_cv_summary(fold_metrics)
+            for m in fold_metrics:
+                mlflow.log_metric("roc_auc_fold", m["roc_auc"], step=m["fold"])
+
+            result = {"study": study_name, "include_sex": include_sex, "cv_summary": summary}
+            if include_sex:
+                base_metrics = cv_score(model_name, params, folds_base, monotone_features, random_state)
+                base_summary = _log_cv_summary(base_metrics, prefix="without_sex_")
+                diff = np.array([a["roc_auc"] - b["roc_auc"] for a, b in zip(fold_metrics, base_metrics)])
+                mlflow.log_metrics({
+                    "sex_effect_roc_auc_mean": float(diff.mean()),
+                    "sex_effect_roc_auc_min": float(diff.min()),
+                    "sex_effect_roc_auc_max": float(diff.max()),
+                })
+                result.update(without_sex_summary=base_summary, sex_effect_folds=diff.round(6).tolist())
+
+            pipe = _fit_final_pipeline(
+                model_name, params, X, y, monotone_features, random_state, include_sex=include_sex
+            )
+            if include_sex:
+                share = sex_importance_share(pipe)
+                mlflow.log_metric("sex_importance_share", share)
+                result["sex_importance_share"] = share
+            mlflow.log_metric("fit_seconds", round(time.time() - start, 1))
+
+            tags = {
+                "task": "tuned_with_sex_cv" if include_sex else "tuned_cv",
+                "feature_strategy": "feature_freeze_v1",
+                "imbalance_strategy": "none",
+                "include_sex": include_sex,
+                "random_state": random_state,
+                "train_size": len(X),
+                "params_source": "configs/tuned_params.yaml",
+            }
+            tags.update(get_data_version_tags())
+            mlflow.set_tags(tags)
+            mlflow.sklearn.log_model(
+                sk_model=pipe,
+                artifact_path="model",
+                signature=infer_signature(X, pipe.predict_proba(X)),
+            )
+
+        logger.info("  → AUC: %.4f ± %.4f", *summary["roc_auc"])
+        if include_sex:
+            logger.info(
+                "  → chênh lệch AUC có/không SEX theo fold: %s (mean %+.4f), tỷ trọng SEX %.2f%%",
+                np.round(diff, 4), diff.mean(), 100 * share,
+            )
+        results.append(result)
+    return results

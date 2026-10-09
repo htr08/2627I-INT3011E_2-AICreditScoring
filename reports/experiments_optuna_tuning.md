@@ -178,6 +178,7 @@ KPI chính thức được đo trên tập Test (Tuần 3 – T3); bảng sau ch
 2. **`configs/config.yaml`**: thêm mục `tuning` (patience, min_delta, timeout, cấu hình pruner, danh sách biến ràng buộc đơn điệu).
 3. **`scripts/run_pipeline.py`**: thêm `--mode tune` cùng các tuỳ chọn `--tune-model`, `--monotone`, `--max-trials`, `--timeout`.
    **`scripts/run_feature_experiment.py`** (mới): thí nghiệm bộ đặc trưng ở mục 8.
+   **`configs/tuned_params.yaml`** (Tuần 2 – T5) và `train_tuned` trong `src/tune.py`: huấn luyện lại mô hình đã tuning không qua Optuna, gồm phiên bản có SEX (`--mode tuned --include-sex`, mục 9).
 4. **`tests/test_tune.py`** (12 test): trial mặc định nằm trong không gian tìm kiếm, ánh xạ ràng buộc chỉ khớp khối numeric, tính đơn điệu của dự đoán với LightGBM và CatBoost, hành vi `PlateauStopper`, cấu trúc nested runs và Model Registry, CLI dispatch.
 
 **Tổ chức trên MLflow** (experiment `credit_scoring`):
@@ -201,11 +202,11 @@ Lệnh tái lập: `python scripts/run_pipeline.py --mode tune` (khoảng 70 ph�
 
 ## 7. Khuyến nghị cho Tuần 2 – T5 và Tuần 3
 
-1. **Ứng viên mô hình cuối:** đề xuất **LightGBM + monotonic constraints** (`lightgbm_monotone_tuned`) làm ứng viên chính. Lý do: AUC tương đương CatBoost (chênh lệch +0.0005, không phân biệt được), có ràng buộc đơn điệu nhất quán với nghiệp vụ, huấn luyện nhanh hơn ~5–25 lần và tương thích tốt với `TreeExplainer` cho demo. **CatBoost tuned** (`catboost_tuned`) giữ vai trò ứng viên đối chứng. Quyết định chọn 1–2 mô hình cuối thuộc buổi họp review Tuần 2 (T6).
-2. **T5 – phiên bản có SEX:** huấn luyện lại ứng viên chính với cùng bộ tham số tốt nhất và `include_sex=True` để phục vụ đối chiếu fairness; không tuning lại.
-3. **SHAP (thành viên C):** chạy lại `03_shap.ipynb` và `03_shap_dependence.ipynb` trên mô hình tuned, do cấu hình cây nông và ràng buộc đơn điệu có thể thay đổi dạng quan hệ đã quan sát trên XGBoost default.
-4. **Calibration (Tuần 3 – T2):** Platt scaling fit tay trên `raw_score=True` (LightGBM) hoặc `prediction_type="RawFormulaVal"` (CatBoost), tương ứng với `output_margin=True` trong quy ước mục 3.5e.
-5. **Bộ đặc trưng:** giữ feature freeze v1 (mục 8). Không cần tuning lại hay chạy lại SHAP do thay đổi đặc trưng.
+1. **Ứng viên mô hình cuối:** LightGBM + monotonic constraints (`lightgbm_monotone_tuned`) là ứng viên chính được đề xuất. AUC tương đương CatBoost (chênh lệch +0.0005, không phân biệt được), ràng buộc đơn điệu nhất quán với nghiệp vụ, thời gian huấn luyện ngắn hơn khoảng 5–25 lần và tương thích với `TreeExplainer` cho demo. CatBoost tuned (`catboost_tuned`) giữ vai trò ứng viên đối chứng. Việc chọn 1–2 mô hình cuối thuộc buổi họp review Tuần 2 (T6).
+2. **Phiên bản có SEX (Tuần 2 – T5):** phiên bản đối chiếu fairness của các ứng viên dùng lại bộ tham số tốt nhất, không tuning lại. Kết quả tại mục 9.
+3. **SHAP:** phân tích trong `03_shap.ipynb` và `03_shap_dependence.ipynb` được thực hiện trên XGBoost tham số mặc định. Cấu hình cây nông và ràng buộc đơn điệu của mô hình tuned có thể làm thay đổi dạng quan hệ đã quan sát, nên kết quả SHAP cần được tính lại trên mô hình cuối.
+4. **Calibration (Tuần 3 – T2):** Platt scaling được fit trên đầu ra thô của mô hình: `raw_score=True` với LightGBM, `prediction_type="RawFormulaVal"` với CatBoost, tương ứng với `output_margin=True` trong quy ước project_plan mục 3.5e.
+5. **Bộ đặc trưng:** feature freeze v1 được giữ nguyên (mục 8); không phát sinh nhu cầu tuning lại hay tính lại SHAP do thay đổi đặc trưng.
 
 ---
 
@@ -248,3 +249,50 @@ KS của mọi cấu hình nằm trong khoảng 0.4445–0.4472, PR-AUC trong kh
 - `split` đạt AUC tương đương v1 với ít cột hơn (73 so với 115–119) và cho phép ràng buộc đơn điệu trên số tháng trễ của `PAY_1`–`PAY_6`. Đây là lợi ích về khả năng giải thích, không phải hiệu năng; áp dụng đòi hỏi tuning lại, chạy lại SHAP và cập nhật `feature_groups`. Với chi phí này và hiệu năng không đổi, **feature freeze v1 được giữ nguyên**.
 
 Lệnh tái lập: `python scripts/run_feature_experiment.py --model lightgbm` và `--model catboost` (khoảng 3 và 9 phút).
+
+---
+
+## 9. Phiên bản có SEX (Tuần 2 – T5)
+
+### 9.1. Mục tiêu và thiết lập
+
+Theo Project Charter mục 1.3, SEX không được dùng trong mô hình chính thức; một phiên bản có SEX được huấn luyện thêm để đối chiếu hiệu năng và fairness. Thiết lập:
+
+- **Mô hình:** 2 ứng viên cuối (mục 7): LightGBM + monotonic constraints và CatBoost.
+- **Tham số:** bộ tham số tốt nhất của study Optuna, lưu tại `configs/tuned_params.yaml`; không tuning lại. Tuning không được tiếp tục ở T5 do cả ba study đã dừng theo điều kiện plateau của Charter (mục 3.1).
+- **Đặc trưng:** feature freeze v1 cộng thêm SEX (one-hot). Monotonic constraints giữ nguyên 11 biến ở mục 2.2; SEX không bị ràng buộc.
+- **Đánh giá:** 5-fold Stratified CV trên Train, cùng 5 fold với bản không có SEX (chia fold chỉ phụ thuộc nhãn), nên chênh lệch được so sánh theo từng fold.
+- **Tầm quan trọng của SEX:** tỷ trọng của các cột SEX trong tổng tầm quan trọng của mô hình fit trên toàn bộ Train (gain với LightGBM, PredictionValuesChange với CatBoost).
+
+### 9.2. Kết quả (5-fold CV)
+
+| Chỉ số | LightGBM + monotonic: không SEX | LightGBM + monotonic: có SEX | CatBoost: không SEX | CatBoost: có SEX |
+|---|---|---|---|---|
+| ROC-AUC | 0.7906 ± 0.0074 | 0.7907 ± 0.0075 | 0.7911 ± 0.0073 | 0.7912 ± 0.0079 |
+| Gini | 0.5813 | 0.5814 | 0.5822 | 0.5824 |
+| KS | 0.4453 | 0.4465 | 0.4452 | 0.4461 |
+| PR-AUC | 0.5624 | 0.5634 | 0.5675 | 0.5681 |
+| Brier | 0.1328 | 0.1327 | 0.1327 | 0.1326 |
+| Recall@0.5 | 0.3774 | 0.3769 | 0.3674 | 0.3692 |
+| Precision@0.5 | 0.6748 | 0.6708 | 0.6754 | 0.6723 |
+
+| Mô hình | Chênh lệch AUC (có − không SEX) theo fold | Trung bình | Tỷ trọng tầm quan trọng của SEX |
+|---|---|---|---|
+| LightGBM + monotonic | +0.0005, −0.0003, 0.0000, −0.0001, +0.0003 | +0.0001 | 0.17% |
+| CatBoost | +0.0004, +0.0001, −0.0014, +0.0005, +0.0008 | +0.0001 | 0.54% |
+
+Chỉ số của bản không có SEX trùng khớp với kết quả tuning ở mục 3.2, xác nhận `configs/tuned_params.yaml` tái lập đúng mô hình đã chọn.
+
+### 9.3. Nhận xét
+
+- **SEX không bổ sung khả năng phân tách.** Chênh lệch AUC trung bình +0.0001 với cả hai mô hình, đổi dấu giữa các fold và nhỏ hơn nhiều so với độ lệch chuẩn giữa các fold (~0.007). Các chỉ số phân tách khác (Gini, KS, PR-AUC, Brier) chênh lệch dưới 0.0015; precision và recall tại ngưỡng 0.5 chênh lệch dưới 0.005.
+- **Mô hình gần như không dùng SEX** khi được cung cấp: SEX chiếm 0.17% (LightGBM) và 0.54% (CatBoost) tổng tầm quan trọng.
+- **Hệ quả cho chính sách biến nhạy cảm:** loại SEX khỏi mô hình chính thức không làm giảm hiệu năng. Tuy nhiên, việc không dùng SEX trực tiếp không bảo đảm mô hình công bằng giữa hai nhóm giới tính, vì các biến khác (vd `LIMIT_BAL`, `EDUCATION`, `AGE_BIN`) có thể tương quan với SEX. Mức độ chênh lệch giữa các nhóm cần được đo trực tiếp ở bước fairness check.
+
+### 9.4. Sử dụng cho fairness check (Tuần 3 – T3)
+
+- Mô hình có SEX được log tại run `lightgbm_monotone_tuned_with_sex` và `catboost_tuned_with_sex` (artifact `model`, Pipeline gồm tiền xử lý và estimator gốc), không đăng ký Model Registry theo quy ước của các run `_with_sex`.
+- Đầu vào của các mô hình này là cột gốc có SEX: `build_features(df, include_sex=True)`.
+- Các chỉ số flag rate, disparate impact ratio và AUC theo nhóm giới tính và nhóm tuổi được tính trên Valid tại ngưỡng đã chọn ở Tuần 3 – T2.
+
+Lệnh tái lập: `python scripts/run_pipeline.py --mode tuned --include-sex` (khoảng 5 phút). Không có `--include-sex`, lệnh huấn luyện lại 2 ứng viên không có SEX từ cùng file tham số.
