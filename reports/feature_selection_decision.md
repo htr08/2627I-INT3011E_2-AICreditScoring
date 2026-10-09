@@ -60,9 +60,9 @@ Danh sách đầy đủ: `reports/correlation_drop.csv`. Các cặp trùng lặp
 
 | Cấu hình | AUC (mean ± std) | KS | Số biến sau lọc | Chênh lệch AUC so với freeze v1 |
 |---|---|---|---|---|
-| freeze v1 (WoE + IV ≥ 0.02) | 0.7789 ± 0.0078 | 0.4355 | 41.8 | – |
-| Lọc IV (FeatureSelectionTransformer) | 0.7789 ± 0.0078 | 0.4355 | 41.8 | 0.0000 |
-| Lọc IV + tương quan | 0.7786 ± 0.0080 | 0.4348 | 34.8 | −0.0003 |
+| freeze v1 (WoE + IV ≥ 0.02) | 0.7790 ± 0.0083 | 0.4326 | 41.0 | – |
+| Lọc IV (FeatureSelectionTransformer) | 0.7790 ± 0.0083 | 0.4328 | 41.8 | 0.0000 |
+| Lọc IV + tương quan | 0.7781 ± 0.0081 | 0.4342 | 34.8 | −0.0009 |
 
 **Mô hình cây** (bộ tham số đã tuning ở T4 của thành viên B; `python scripts/run_feature_experiment.py`, chi tiết tại `reports/experiments_optuna_tuning.md` mục 8):
 

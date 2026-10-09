@@ -397,18 +397,81 @@ class AgeBinningTransformer(BaseEstimator, TransformerMixin):
         return X
 
 
+def _bin_stats(x: np.ndarray, y: np.ndarray, edges: np.ndarray):
+    """Số mẫu và tỷ lệ bad của từng bin (x không có NaN)."""
+    idx = np.searchsorted(edges[1:-1], x, side="left")
+    counts = np.bincount(idx, minlength=len(edges) - 1)
+    bads = np.bincount(idx, weights=y, minlength=len(edges) - 1)
+    return counts, bads / np.maximum(counts, 1)
+
+
+def _coarse_edges(x, y, edges, min_bin_share=None, monotonic=False) -> np.ndarray:
+    """Coarse classing: gộp bin liền kề cho đến khi mỗi bin có >= min_bin_share mẫu và
+    (nếu monotonic) tỷ lệ bad đơn điệu theo chiều tương quan của biến với nhãn.
+
+    edges là biên đã mở rộng ±inf; mỗi lần gộp bỏ một biên trong. Bin NaN xử lý riêng.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    edges = np.asarray(edges, dtype=float)
+
+    def merge(i):  # gộp bin i và i+1
+        return np.delete(edges, i + 1)
+
+    if min_bin_share:
+        min_count = min_bin_share * len(x)
+        while len(edges) > 2:
+            counts, rates = _bin_stats(x, y, edges)
+            i = int(np.argmin(counts))
+            if counts[i] >= min_count:
+                break
+            if i == 0:
+                edges = merge(0)
+            elif i == len(counts) - 1:
+                edges = merge(i - 1)
+            else:  # gộp với bin kề có tỷ lệ bad gần hơn
+                left = abs(rates[i] - rates[i - 1]) <= abs(rates[i] - rates[i + 1])
+                edges = merge(i - 1 if left else i)
+
+    if monotonic and len(edges) > 2:
+        direction = np.sign(pd.Series(x).corr(pd.Series(y), method="spearman")) or 1.0
+        while len(edges) > 2:
+            _, rates = _bin_stats(x, y, edges)
+            violations = np.where(direction * np.diff(rates) < 0)[0]
+            if len(violations) == 0:
+                break
+            edges = merge(int(violations[0]))
+    return edges
+
+
 class WoEIVTransformer(BaseEstimator, TransformerMixin):
     """Transformer mã hóa Weight of Evidence (WoE) và lọc theo Information Value (IV).
 
     Biến số có <= max_categories giá trị khác nhau (cờ 0/1, EDUCATION, PAY_*) được xử lý như
     biến phân loại (mỗi giá trị một bin) vì qcut sẽ gộp chúng thành quá ít bin.
     NaN của biến liên tục được gán vào bin MISSING_BIN riêng (có WoE riêng).
+
+    Coarse classing (Tuần 2 - T5, dùng cho Logistic Scorecard; mặc định tắt):
+        min_bin_share: mỗi bin có tối thiểu tỷ lệ mẫu này; bin nhỏ gộp với bin kề. Biến số rời rạc
+            khi bật coarse classing được chia theo khoảng giữa các giá trị, nên giá trị chưa gặp khi
+            fit (vd PAY_x = 8 chỉ có ở Valid) rơi vào bin gần nhất thay vì nhận WoE = 0.
+        monotonic: với biến liên tục, gộp bin kề đến khi tỷ lệ bad đơn điệu theo chiều tương quan
+            Spearman với nhãn.
     """
 
-    def __init__(self, n_bins: int = 5, iv_threshold: float = 0.02, max_categories: int = 12):
+    def __init__(
+        self,
+        n_bins: int = 5,
+        iv_threshold: float = 0.02,
+        max_categories: int = 12,
+        min_bin_share: Optional[float] = None,
+        monotonic: bool = False,
+    ):
         self.n_bins = n_bins
         self.iv_threshold = iv_threshold
         self.max_categories = max_categories
+        self.min_bin_share = min_bin_share
+        self.monotonic = monotonic
 
     def fit(self, X, y):
         X = X.copy()
@@ -419,23 +482,40 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
         self.woe_maps_ = {}
         self.iv_values_ = {}
 
+        coarse = bool(self.min_bin_share) or self.monotonic
+
         for col in X.columns:
             try:
-                is_continuous = (
-                    pd.api.types.is_numeric_dtype(X[col])
-                    and X[col].nunique() > self.max_categories
-                )
-                if is_continuous:
-                    _, edges = pd.qcut(
-                        X[col],
-                        q=self.n_bins,
-                        retbins=True,
-                        duplicates="drop"
-                    )
-                    edges = np.unique(edges)
+                is_numeric = pd.api.types.is_numeric_dtype(X[col])
+                is_continuous = is_numeric and X[col].nunique() > self.max_categories
+                if is_continuous or (coarse and is_numeric):
+                    if is_continuous:
+                        _, edges = pd.qcut(
+                            X[col],
+                            q=self.n_bins,
+                            retbins=True,
+                            duplicates="drop"
+                        )
+                        edges = np.unique(edges)
+                    else:
+                        # Biến rời rạc: mỗi giá trị một bin, biên đặt giữa hai giá trị liền kề.
+                        values = np.sort(X[col].dropna().unique()).astype(float)
+                        mids = (values[:-1] + values[1:]) / 2
+                        edges = np.concatenate([[values[0]], mids, [values[-1]]])
                     if len(edges) < 2:
                         continue
                     edges = _open_edges(edges)
+                    if coarse:
+                        observed = X[col].notna()
+                        # Chỉ ép đơn điệu cho biến liên tục: mã rời rạc như PAY_x (-2, -1, 0 là các
+                        # trạng thái khác nhau, không phải thang tăng dần) giữ dạng quan hệ thực tế.
+                        edges = _coarse_edges(
+                            X.loc[observed, col],
+                            y[observed],
+                            edges,
+                            self.min_bin_share,
+                            self.monotonic and is_continuous,
+                        )
                     bins = _label_missing(pd.cut(
                         X[col],
                         bins=edges,
