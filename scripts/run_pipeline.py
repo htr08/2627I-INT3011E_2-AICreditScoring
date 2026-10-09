@@ -33,7 +33,12 @@ from src.pipelines import (
     build_scorecard_pipeline,
 )
 from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, SENSITIVE_COLUMNS
-from src.train import train_baseline, train_rf_xgboost_default
+from src.train import (
+    train_baseline,
+    train_boosting_default,
+    train_imbalance_experiments,
+    train_rf_xgboost_default,
+)
 
 FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
@@ -96,9 +101,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "all", "woe"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'all' or 'woe'",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all' or 'woe'",
     )
     parser.add_argument(
         "--include-sex",
@@ -125,6 +130,10 @@ def main():
             train_baseline(include_sex=args.include_sex)
         if args.mode in ("advanced", "all"):
             train_rf_xgboost_default(include_sex=args.include_sex)
+        if args.mode in ("boosting", "all"):
+            train_boosting_default(include_sex=args.include_sex)
+        if args.mode in ("imbalance", "all"):
+            train_imbalance_experiments(include_sex=args.include_sex)
 
 
 if __name__ == "__main__":
