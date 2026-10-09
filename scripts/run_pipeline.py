@@ -74,7 +74,9 @@ def run_woe_pipeline(write_freeze: bool = False):
     X_train, y_train = build_features(train_df)
     print("Train:", X_train.shape)
 
-    pipeline = build_scorecard_pipeline().fit(X_train, y_train)
+    # IV theo cấu hình T3 (5 bin phân vị, mỗi giá trị rời rạc một bin) để khớp feature freeze v1;
+    # scorecard chính thức dùng coarse classing nên IV của nó khác bảng này.
+    pipeline = build_scorecard_pipeline(coarse_classing=False).fit(X_train, y_train)
     woe = pipeline.named_steps["woe_iv"]
     iv_sorted = sorted(woe.iv_values_.items(), key=lambda x: x[1], reverse=True)
 

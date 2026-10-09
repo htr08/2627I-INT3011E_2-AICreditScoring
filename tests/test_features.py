@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pytest
 from pandas import DataFrame
 
 from src.features import (
@@ -634,3 +635,54 @@ def test_feature_importance_reports_folds_selected():
     assert result.loc[["signal", "near_copy"], "n_folds_selected"].sum() == 5
     single = result[result["n_folds_selected"] == 1]
     assert single["importance_std"].isna().all()
+
+
+# Coarse classing (Tuần 2 - T5)
+def _coarse_data(n=2000, seed=0):
+    rng = np.random.default_rng(seed)
+    x = rng.normal(size=n)
+    # Quan hệ tăng nhưng có nhiễu cục bộ để bin phân vị không đơn điệu
+    p = 1 / (1 + np.exp(-(1.2 * x + 0.6 * np.sin(6 * x))))
+    y = pd.Series((rng.random(n) < p).astype(int))
+    codes = rng.choice([-2, -1, 0, 1, 2, 3, 4, 7], size=n, p=[0.2, 0.2, 0.4, 0.1, 0.07, 0.015, 0.01, 0.005])
+    return pd.DataFrame({"cont": x, "code": codes}), y
+
+
+def test_woe_default_unchanged_without_coarse_classing():
+    """Mặc định (không coarse classing): biến rời rạc giữ mỗi giá trị một bin như cấu hình T3."""
+    X, y = _coarse_data()
+    woe = WoEIVTransformer().fit(X, y)
+    assert "code" not in woe.bin_edges_
+    assert len(woe.woe_maps_["code"]) == X["code"].nunique()
+
+
+def test_coarse_classing_min_bin_share():
+    """Mọi bin (kể cả biến rời rạc) có >= min_bin_share mẫu."""
+    X, y = _coarse_data()
+    woe = WoEIVTransformer(n_bins=20, min_bin_share=0.05).fit(X, y)
+    for col in ["cont", "code"]:
+        share = pd.cut(X[col], woe.bin_edges_[col], include_lowest=True).value_counts(normalize=True)
+        assert share.min() >= 0.05
+
+
+def test_coarse_classing_monotonic_only_for_continuous():
+    """Biến liên tục có tỷ lệ bad đơn điệu theo bin; biến rời rạc không bị ép đơn điệu."""
+    X, y = _coarse_data()
+    woe = WoEIVTransformer(n_bins=20, min_bin_share=0.05, monotonic=True).fit(X, y)
+
+    bins = pd.cut(X["cont"], woe.bin_edges_["cont"], include_lowest=True)
+    rates = y.groupby(bins, observed=True).mean().to_numpy()
+    assert np.all(np.diff(rates) >= 0)
+
+    plain = WoEIVTransformer(n_bins=20, min_bin_share=0.05).fit(X, y)
+    np.testing.assert_array_equal(woe.bin_edges_["code"], plain.bin_edges_["code"])
+
+
+def test_coarse_classing_unseen_value_maps_to_nearest_bin():
+    """Giá trị rời rạc chưa gặp khi fit rơi vào bin gần nhất thay vì nhận WoE = 0."""
+    X, y = _coarse_data()
+    woe = WoEIVTransformer(n_bins=20, min_bin_share=0.05, iv_threshold=0.0).fit(X, y)
+    seen_max = X.loc[X["code"] == X["code"].max()].head(1)
+    unseen = seen_max.assign(code=99)
+    assert woe.transform(unseen)["code"].item() == pytest.approx(woe.transform(seen_max)["code"].item())
+    assert woe.transform(unseen)["code"].item() != 0.0

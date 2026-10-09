@@ -27,6 +27,10 @@ from src.preprocessing import (
 SCORECARD_N_BINS = 5
 SCORECARD_IV_THRESHOLD = 0.02
 SCORECARD_CORRELATION_THRESHOLD = 0.9
+# Coarse classing cho bảng điểm (Tuần 2 - T5): 20 bin phân vị ban đầu, gộp đến khi mỗi bin
+# có >= 5% mẫu và WoE của biến liên tục đơn điệu (reports/logistic_scorecard.md mục 2.2).
+SCORECARD_FINE_BINS = 20
+SCORECARD_MIN_BIN_SHARE = 0.05
 AGE_MIN_BINS = 3
 AGE_MAX_BINS = 8
 
@@ -115,6 +119,7 @@ def build_scorecard_pipeline(
     enable_feature_selection: bool = False,
     enable_correlation_filter: bool = True,
     sign_constrained: bool = True,
+    coarse_classing: bool = True,
 ) -> Pipeline:
     """Pipeline Logistic Scorecard (WoE) theo kế hoạch Tuần 2 - T3 / T5.
 
@@ -129,6 +134,8 @@ def build_scorecard_pipeline(
         enable_correlation_filter: (khi enable_feature_selection=True) bật/tắt lọc tương quan.
         sign_constrained: True (mặc định) dùng SignConstrainedLogisticRegression để mọi hệ số WoE
             cùng dấu, bảng điểm nhất quán; False dùng LogisticRegression thường (cấu hình T3).
+        coarse_classing: True (mặc định) gộp bin WoE (mỗi bin >= 5% mẫu, WoE đơn điệu với biến
+            liên tục); False dùng 5 bin phân vị, mỗi giá trị rời rạc một bin (cấu hình T3).
     """
     steps = [
         ("abnormal_codes", AbnormalCodeTransformer()),
@@ -149,8 +156,13 @@ def build_scorecard_pipeline(
         ))
     # Khi đã có bước feature_selection, WoE không lọc thêm theo IV (ngưỡng 0).
     iv_threshold = 0.0 if enable_feature_selection else SCORECARD_IV_THRESHOLD
+    woe_params = (
+        dict(n_bins=SCORECARD_FINE_BINS, min_bin_share=SCORECARD_MIN_BIN_SHARE, monotonic=True)
+        if coarse_classing
+        else dict(n_bins=SCORECARD_N_BINS)
+    )
     steps += [
-        ("woe_iv", WoEIVTransformer(n_bins=SCORECARD_N_BINS, iv_threshold=iv_threshold)),
+        ("woe_iv", WoEIVTransformer(**woe_params, iv_threshold=iv_threshold)),
         ("model", SignConstrainedLogisticRegression() if sign_constrained else LogisticRegression(max_iter=1000)),
     ]
     return Pipeline(steps)
