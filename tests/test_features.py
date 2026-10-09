@@ -1,3 +1,5 @@
+from unittest import result
+
 import numpy as np
 import pandas as pd
 from pandas import DataFrame
@@ -341,17 +343,62 @@ def test_scorecard_pipeline_on_raw_columns(raw_credit_df: DataFrame):
     assert "PAY_1" in woe.iv_values_
     assert "PAY_MEAN" in woe.iv_values_
 
-
 def test_scorecard_pipeline_drops_sex_and_id(raw_credit_df: DataFrame):
     X, y = _split_xy(raw_credit_df)
 
-    woe = build_scorecard_pipeline().fit(X, y).named_steps["woe_iv"]
+    # Pipeline chính thức: loại cả SEX và ID
+    pipeline = build_scorecard_pipeline().fit(X, y)
+    woe = pipeline.named_steps["woe_iv"]
+
     assert "SEX" not in woe.iv_values_
     assert "ID" not in woe.iv_values_
 
-    woe_with_sex = build_scorecard_pipeline(drop_sensitive=False).fit(X, y).named_steps["woe_iv"]
-    assert "SEX" in woe_with_sex.iv_values_
+    # Pipeline fairness: giữ SEX nhưng vẫn loại ID
+    fairness_pipeline = build_scorecard_pipeline(
+        drop_sensitive=False
+    ).fit(X, y)
+    woe_with_sex = fairness_pipeline.named_steps["woe_iv"]
 
+    assert "SEX" in woe_with_sex.iv_values_
+    assert "ID" not in woe_with_sex.iv_values_
+
+def test_feature_selection_enabled_for_both_fairness_modes(
+    raw_credit_df: DataFrame,
+):
+    X, y = _split_xy(raw_credit_df)
+
+    official = build_scorecard_pipeline(
+        drop_sensitive=True,
+        enable_feature_selection=True,
+    )
+    fairness = build_scorecard_pipeline(
+        drop_sensitive=False,
+        enable_feature_selection=True,
+    )
+
+    # Cả hai pipeline đều sử dụng cùng bước feature selection.
+    assert "feature_selection" in official.named_steps
+    assert "feature_selection" in fairness.named_steps
+
+    # Lấy các bước trước feature selection.
+    official_idx = [
+        name for name, _ in official.steps
+    ].index("feature_selection")
+
+    fairness_idx = [
+        name for name, _ in fairness.steps
+    ].index("feature_selection")
+
+    X_official = official[:official_idx].fit_transform(X, y)
+    X_fairness = fairness[:fairness_idx].fit_transform(X, y)
+
+    # ID bị loại ở cả hai pipeline.
+    assert "ID" not in X_official.columns
+    assert "ID" not in X_fairness.columns
+
+    # Chỉ pipeline fairness giữ SEX trước bước chọn đặc trưng.
+    assert "SEX" not in X_official.columns
+    assert "SEX" in X_fairness.columns
 
 def test_scorecard_pipeline_with_cv(raw_credit_df: DataFrame):
     from sklearn.model_selection import StratifiedKFold, cross_val_score
@@ -440,3 +487,108 @@ def test_feature_selection_transformer():
     assert hasattr(transformer, "selected_features_")
     assert X_selected.shape[0] == X.shape[0]
     assert list(X_selected.columns) == transformer.selected_features_
+
+def test_compute_iv_stability():
+    from src.features import compute_iv_stability
+
+    X = pd.DataFrame({
+        "strong_feature": [0] * 50 + [1] * 50,
+        "weak_feature": [
+            0, 1
+        ] * 50,
+    })
+
+    y = pd.Series([0] * 50 + [1] * 50)
+
+    result = compute_iv_stability(
+        X,
+        y,
+        n_splits=5,
+        random_state=42,
+    )
+
+    assert not result.empty
+    assert {
+        "feature",
+        "iv_mean",
+        "iv_std",
+        "iv_min",
+        "iv_max",
+    }.issubset(result.columns)
+
+    assert set(result["feature"]) == {
+        "strong_feature",
+        "weak_feature",
+    }
+
+    assert np.isfinite(
+        result[["iv_mean", "iv_std", "iv_min", "iv_max"]]
+    ).all().all()
+
+    assert (result["iv_std"] >= 0).all()
+    assert (result["iv_min"] <= result["iv_mean"]).all()
+    assert (result["iv_mean"] <= result["iv_max"]).all()
+
+def test_feature_selection_removes_low_iv_feature():
+    X = pd.DataFrame({
+        "strong_feature": [0] * 50 + [1] * 50,
+        "weak_feature": [0, 1] * 50,
+    })
+
+    y = pd.Series([0] * 50 + [1] * 50)
+
+    transformer = FeatureSelectionTransformer(
+        iv_threshold=0.02,
+        enable_correlation_filter=False,
+    )
+
+    transformer.fit(X, y)
+    result = transformer.transform(X)
+
+    assert "strong_feature" in result.columns
+    assert "weak_feature" not in result.columns
+    assert any(
+        item["feature"] == "weak_feature"
+        and item["reason"] == "IV thấp"
+        for item in transformer.dropped_features_
+)
+
+def test_find_high_correlation_features_keeps_higher_iv():
+    X = pd.DataFrame({
+        "feature_a": [0] * 50 + [1] * 50,
+        "feature_b": [0] * 50 + [1] * 50,
+        "feature_c": [0, 1] * 50,
+    })
+
+    y = pd.Series([0] * 50 + [1] * 50)
+
+    dropped = find_high_correlation_features(
+        X,
+        y,
+        threshold=0.9,
+    )
+
+    # Hai biến tương quan hoàn hảo nên chỉ giữ một biến.
+    assert ("feature_a" in dropped) ^ ("feature_b" in dropped)
+
+    # Biến không tương quan cao không bị loại vì tương quan.
+    assert "feature_c" not in dropped
+
+def test_feature_selection_on_raw_credit_data(raw_credit_df: DataFrame):
+    X, y = _split_xy(raw_credit_df)
+
+    pipeline = build_scorecard_pipeline(
+        drop_sensitive=True,
+        enable_feature_selection=True,
+    )
+
+    pipeline.fit(X, y)
+    predictions = pipeline.predict_proba(X)
+
+    assert predictions.shape == (len(y), 2)
+    assert np.isfinite(predictions).all()
+
+    selected = pipeline.named_steps["feature_selection"]
+
+    assert "ID" not in selected.selected_features_
+    assert "SEX" not in selected.selected_features_

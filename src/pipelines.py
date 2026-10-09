@@ -41,12 +41,18 @@ def make_pipeline(estimator, include_sex: bool = False) -> Pipeline:
         ("clf", estimator),
     ])
 
-def build_scorecard_pipeline(drop_sensitive: bool = True) -> Pipeline:
-    """Pipeline Logistic Scorecard (WoE) theo kế hoạch Tuần 2 - T3 / T5.
+def build_scorecard_pipeline(
+    drop_sensitive: bool = True,
+    enable_feature_selection: bool = False,
+    enable_correlation_filter: bool = True,
+) -> Pipeline:
+    """Pipeline Logistic Scorecard.
 
-    Mọi bước có học tham số (age binning, feature selection, WoE)
-    nằm trong Pipeline nên được fit lại trong từng fold khi chạy
-    cross-validation.
+    enable_feature_selection=False: giữ nguyên feature freeze v1.
+    enable_feature_selection=True: bật lọc biến cho thí nghiệm fairness.
+
+    Hai chế độ chỉ khác nhau ở việc có loại SEX hay không.
+    ID luôn bị loại ở cả hai chế độ.
     """
     steps = [
         ("abnormal_codes", AbnormalCodeTransformer()),
@@ -58,15 +64,18 @@ def build_scorecard_pipeline(drop_sensitive: bool = True) -> Pipeline:
                 max_bins=AGE_MAX_BINS,
             ),
         ),
+        (
+            "drop_id",
+            DropColumnsTransformer(columns=["ID"]),
+        ),
     ]
 
     if drop_sensitive:
         steps.append(
-            (
-                "drop_sensitive",
-                DropColumnsTransformer(columns=SENSITIVE_COLUMNS),
-            )
+            ("drop_sex", DropColumnsTransformer(columns=["SEX"]))
         )
+
+    if enable_feature_selection:
         steps.append(
             (
                 "feature_selection",
@@ -74,19 +83,24 @@ def build_scorecard_pipeline(drop_sensitive: bool = True) -> Pipeline:
                     iv_threshold=SCORECARD_IV_THRESHOLD,
                     correlation_threshold=0.9,
                     n_bins=SCORECARD_N_BINS,
-                ),
+                    passthrough_columns=("SEX",),
+                    enable_correlation_filter=enable_correlation_filter,
+                )
             )
         )
 
-    steps += [
+    steps.extend([
         (
             "woe_iv",
             WoEIVTransformer(
                 n_bins=SCORECARD_N_BINS,
-                iv_threshold=SCORECARD_IV_THRESHOLD,
+                iv_threshold=(
+                    0.0 if enable_feature_selection
+                    else SCORECARD_IV_THRESHOLD
+                ),
             ),
         ),
         ("model", LogisticRegression(max_iter=1000)),
-    ]
+    ])
 
     return Pipeline(steps)

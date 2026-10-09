@@ -1,38 +1,45 @@
+
 """Pipeline runner for model training and feature evaluation.
 
 Usage:
-    python scripts/run_pipeline.py                    # Huấn luyện baseline models (LR & DT)
-    python scripts/run_pipeline.py --mode advanced    # Huấn luyện RF & XGBoost (tham số mặc định)
-    python scripts/run_pipeline.py --mode all         # Cả baseline và advanced
-    python scripts/run_pipeline.py --include-sex      # Bản đối chiếu fairness (có SEX, không đăng ký model)
-    python scripts/run_pipeline.py --mode woe         # Báo cáo WoE/IV trên Train
-    python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
+    python scripts/run_pipeline.py
+        # Huấn luyện baseline models (LR & DT)
+    python scripts/run_pipeline.py --mode advanced
+        # Huấn luyện RF & XGBoost
+    python scripts/run_pipeline.py --mode all
+        # Huấn luyện baseline và advanced
+    python scripts/run_pipeline.py --include-sex
+        # Đối chiếu fairness
+    python scripts/run_pipeline.py --mode woe
+        # Báo cáo WoE/IV trên Train
+    python scripts/run_pipeline.py --mode woe --freeze
+        # Ghi configs/feature_freeze_v1.yaml
+    python scripts/run_pipeline.py --mode scorecard --feature-selection
+        # Scorecard với feature selection theo từng fold
 """
 
 import argparse
 import hashlib
 import logging
 import sys
-import pandas as pd
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
-# Đảm bảo đường dẫn gốc dự án luôn có trong sys.path khi chạy script trực tiếp
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
 
 from src.data_split import load_split_data
 
 from src.features import (
     ENGINEERED_COLUMNS,
     build_features,
-    compute_iv_stability,
     compute_feature_importance_stability,
+    compute_iv_stability,
     find_high_correlation_features,
     prepare_feature_selection_data,
 )
@@ -62,17 +69,14 @@ FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
 
 def run_woe_pipeline(write_freeze: bool = False):
-    """Chạy đánh giá feature trên Train và báo cáo WoE/IV, correlation,
-    IV stability và feature importance stability.
-    """
+    """Đánh giá WoE/IV, correlation và độ ổn định feature trên Train."""
 
     train_df, _, _ = load_split_data()
-
     X_train, y_train = build_features(train_df)
 
     print("Train:", X_train.shape)
 
-    # 1. Fit WoE/IV trên Train
+    # 1. Fit WoE/IV trên Train.
     pipeline = build_scorecard_pipeline().fit(
         X_train,
         y_train,
@@ -82,22 +86,23 @@ def run_woe_pipeline(write_freeze: bool = False):
 
     iv_sorted = sorted(
         woe.iv_values_.items(),
-        key=lambda x: x[1],
+        key=lambda item: item[1],
         reverse=True,
     )
 
-    print("\nIV values (* = selected):")
+    selected_features = set(woe.selected_features_)
+
+    print("\nIV values (* = selected by IV threshold):")
 
     for feature, iv in iv_sorted:
-        mark = "*" if feature in woe.selected_features_ else " "
+        mark = "*" if feature in selected_features else " "
         print(f"  {mark} {feature}: {iv:.4f}")
 
-    # 2. Correlation filtering
-    # Chuẩn hóa dữ liệu theo đúng preprocessing của scorecard
-    # trước khi thực hiện correlation filtering.
+    # 2. Correlation filtering.
     X_selection = prepare_feature_selection_data(
         X_train,
         y=y_train,
+        preprocessed=True,
     )
 
     correlation_drop = find_high_correlation_features(
@@ -111,49 +116,67 @@ def run_woe_pipeline(write_freeze: bool = False):
     for feature in correlation_drop:
         print(f"  - {feature}")
 
-    # 3. IV stability
+    # 3. IV stability.
+    # X_train đã qua build_features; không preprocessing lại.
     iv_stability = compute_iv_stability(
         X_train,
         y_train,
         n_splits=5,
         random_state=42,
+        raw_credit_data=False,
     )
 
-    # 4. Feature importance stability
+    # 4. Feature importance stability.
     importance_stability = compute_feature_importance_stability(
         X_train,
         y_train,
         n_splits=5,
         random_state=42,
         correlation_threshold=0.9,
+        raw_credit_data=False,
     )
 
-    # 5. Xuất reports
+    # 5. Xuất báo cáo.
     reports_dir = PROJECT_ROOT / "reports"
     reports_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    correlation_df = pd.DataFrame(
-        {
-            "feature_to_drop": correlation_drop,
-        }
-    )
+    correlation_df = pd.DataFrame({
+        "feature_to_drop": correlation_drop,
+    })
 
+    correlation_path = reports_dir / "correlation_woe.csv"
     correlation_df.to_csv(
-        reports_dir / "correlation.csv",
+        correlation_path,
         index=False,
+        encoding="utf-8-sig",
     )
 
     iv_report = pd.DataFrame(
-        iv_sorted,
-        columns=["feature", "iv"],
+        [
+            {
+                "feature": feature,
+                "iv": float(iv),
+                "selected_by_iv_threshold": (
+                    feature in selected_features
+                ),
+            }
+            for feature, iv in iv_sorted
+        ],
+        columns=[
+            "feature",
+            "iv",
+            "selected_by_iv_threshold",
+        ],
     )
 
+    iv_report_path = reports_dir / "information_value_woe.csv"
     iv_report.to_csv(
-        reports_dir / "information_value.csv",
+        iv_report_path,
         index=False,
+        encoding="utf-8-sig",
     )
 
     importance_stability.to_csv(
@@ -167,8 +190,8 @@ def run_woe_pipeline(write_freeze: bool = False):
     )
 
     print("\nReports written:")
-    print("  reports/correlation.csv")
-    print("  reports/information_value.csv")
+    print("  reports/correlation_woe.csv")
+    print("  reports/information_value_woe.csv")
     print("  reports/iv_stability.csv")
     print("  reports/feature_importance.csv")
 
@@ -180,9 +203,7 @@ def run_woe_pipeline(write_freeze: bool = False):
 
 
 def write_feature_freeze(iv_sorted, selected):
-    """Ghi danh sách đặc trưng chốt (feature freeze v1)
-    ra configs/feature_freeze_v1.yaml.
-    """
+    """Ghi danh sách đặc trưng chốt ra feature_freeze_v1.yaml."""
 
     splits_path = (
         PROJECT_ROOT
@@ -211,9 +232,9 @@ def write_feature_freeze(iv_sorted, selected):
             ),
             "categorical": CATEGORICAL_COLUMNS + ["AGE_BIN"],
             "numeric_raw": [
-                c
-                for c in NUMERIC_COLUMNS
-                if c != "AGE"
+                column
+                for column in NUMERIC_COLUMNS
+                if column != "AGE"
             ],
             "age": (
                 f"AGE_BIN: binning theo IV trên Train "
@@ -241,32 +262,34 @@ def write_feature_freeze(iv_sorted, selected):
         },
     }
 
+    FREEZE_PATH.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
     with open(
         FREEZE_PATH,
         "w",
         encoding="utf-8",
-    ) as f:
-
-        f.write(
+    ) as file:
+        file.write(
             "# Feature freeze v1 - sinh tự động bởi: "
             "python scripts/run_pipeline.py --mode woe --freeze\n"
         )
-
-        f.write(
+        file.write(
             "# Mọi thay đổi đặc trưng sau mốc này phải được "
             "cả nhóm thống nhất (project_plan.md).\n"
         )
 
         yaml.safe_dump(
             freeze,
-            f,
+            file,
             allow_unicode=True,
             sort_keys=False,
         )
 
     print(
-        f"\nWrote "
-        f"{FREEZE_PATH.relative_to(PROJECT_ROOT)}"
+        f"\nWrote {FREEZE_PATH.relative_to(PROJECT_ROOT)}"
     )
 
 
@@ -286,10 +309,8 @@ def main():
         ],
         default="baseline",
         help=(
-            "Pipeline mode to run: "
-            "'baseline' (default), "
-            "'advanced' (RF & XGBoost), "
-            "'all' or 'woe'"
+            "Pipeline mode: baseline, advanced, all, "
+            "scorecard hoặc woe"
         ),
     )
 
@@ -303,11 +324,20 @@ def main():
     )
 
     parser.add_argument(
+        "--feature-selection",
+        action="store_true",
+        help=(
+            "Bật feature selection trong scorecard; "
+            "xuất báo cáo theo từng fold"
+        ),
+    )
+
+    parser.add_argument(
         "--freeze",
         action="store_true",
         help=(
-            "(mode woe) Ghi danh sách đặc trưng chốt "
-            "ra configs/feature_freeze_v1.yaml"
+            "Ghi configs/feature_freeze_v1.yaml "
+            "khi chạy mode woe"
         ),
     )
 
@@ -315,41 +345,39 @@ def main():
 
     logging.basicConfig(
         level=logging.INFO,
-        format=(
-            "%(asctime)s [%(levelname)s] "
-            "%(name)s: %(message)s"
-        ),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         datefmt="%H:%M:%S",
     )
 
     if args.mode == "woe":
-
         run_woe_pipeline(
-            write_freeze=args.freeze
+            write_freeze=args.freeze,
+        )
+        return
+
+    if args.freeze:
+        parser.error("--freeze chỉ dùng với --mode woe")
+
+    if args.feature_selection and args.mode != "scorecard":
+        parser.error(
+            "--feature-selection chỉ dùng với --mode scorecard"
         )
 
-    else:
+    if args.mode in ("baseline", "all"):
+        train_baseline(
+            include_sex=args.include_sex,
+        )
 
-        if args.mode in (
-            "baseline",
-            "all",
-        ):
-            train_baseline(
-                include_sex=args.include_sex
-            )
+    if args.mode in ("advanced", "all"):
+        train_rf_xgboost_default(
+            include_sex=args.include_sex,
+        )
 
-        if args.mode in (
-            "advanced",
-            "all",
-        ):
-            train_rf_xgboost_default(
-                include_sex=args.include_sex
-            )
-
-        if args.mode == "scorecard":
-            train_scorecard(
-                include_sex=args.include_sex
-            )
+    if args.mode == "scorecard":
+        train_scorecard(
+            include_sex=args.include_sex,
+            enable_feature_selection=args.feature_selection,
+        )
 
 
 if __name__ == "__main__":

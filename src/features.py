@@ -683,138 +683,148 @@ class WoEIVTransformer(
 
         return result
 
-
 class FeatureSelectionTransformer(
     BaseEstimator,
     TransformerMixin
 ):
-    """Lọc feature theo IV và tương quan cao.
-
-    Quy trình:
-    1. Tính IV trên tập train.
-    2. Loại feature có IV < iv_threshold.
-    3. Với các feature số có |correlation| > correlation_threshold,
-       giữ feature có IV cao hơn.
-    4. Lưu selected_features_ để dùng cho transform.
-
-    Transformer này được thiết kế để đặt trong sklearn Pipeline.
-    Khi Pipeline được dùng trong cross-validation, fit() chỉ chạy
-    trên training fold nên tránh leakage.
-    """
+    """Lọc feature theo IV và tương quan cao, đồng thời ghi lý do loại."""
 
     def __init__(
         self,
         iv_threshold: float = 0.02,
         correlation_threshold: float = 0.9,
         n_bins: int = 5,
+        passthrough_columns: tuple = (),
+        enable_correlation_filter: bool = True,
     ):
         self.iv_threshold = iv_threshold
         self.correlation_threshold = correlation_threshold
         self.n_bins = n_bins
+        self.passthrough_columns = passthrough_columns
+        self.enable_correlation_filter = enable_correlation_filter
 
     def fit(self, X, y):
         X = X.copy()
+        y = pd.Series(y, index=X.index)
 
-        y = pd.Series(
-            y,
-            index=X.index
+        # Các cột không tham gia chọn feature.
+        excluded = [
+            col
+            for col in self.passthrough_columns
+            if col in X.columns
+        ]
+
+        X_selection = X.drop(
+            columns=excluded
         )
 
-        # Tính IV cho toàn bộ feature.
+        # Bước 1: Tính IV trên training fold hiện tại.
         iv_transformer = WoEIVTransformer(
             n_bins=self.n_bins,
             iv_threshold=0.0,
         )
 
         iv_transformer.fit(
-            X,
-            y
+            X_selection,
+            y,
         )
 
         self.iv_values_ = (
             iv_transformer.iv_values_.copy()
         )
 
-        # Bước 1: lọc theo IV.
+        # Chọn feature đạt ngưỡng IV.
         selected = [
-            column
-            for column in X.columns
-            if self.iv_values_.get(
-                column,
-                0.0
-            ) >= self.iv_threshold
+            col
+            for col in X_selection.columns
+            if self.iv_values_.get(col, 0.0)
+            >= self.iv_threshold
         ]
 
-        # Bước 2: xử lý tương quan cao.
-        # Chỉ xét các feature numeric.
-        numeric_selected = X[
-            selected
-        ].select_dtypes(
-            include=[np.number]
-        )
+        # Ghi nhận các feature bị loại vì IV thấp.
+        dropped = []
 
-        if numeric_selected.shape[1] >= 2:
-            to_drop = find_high_correlation_features(
-                numeric_selected,
-                y,
-                threshold=self.correlation_threshold,
+        for col in X_selection.columns:
+            iv = self.iv_values_.get(
+                col,
+                float("nan"),
             )
 
-            selected = [
-                column
-                for column in selected
-                if column not in to_drop
-            ]
+            if col not in selected:
+                dropped.append({
+                    "feature": col,
+                    "iv": iv,
+                    "reason": "IV thấp",
+                    "correlated_with": "",
+                    "correlation": float("nan"),
+                })
 
+        # Bước 2: Lọc tương quan nếu được bật.
+        if self.enable_correlation_filter:
+            numeric_selected = (
+                X_selection[selected]
+                .select_dtypes(include=[np.number])
+            )
+
+            if numeric_selected.shape[1] >= 2:
+                to_drop, correlation_details = (
+                    find_high_correlation_features(
+                        numeric_selected,
+                        y,
+                        threshold=self.correlation_threshold,
+                        return_details=True,
+                    )
+                )
+
+                dropped.extend(correlation_details)
+
+                selected = [
+                    col
+                    for col in selected
+                    if col not in to_drop
+                ]
+
+        # Lưu kết quả để transform() và train.py sử dụng.
         self.selected_features_ = selected
+        self.passthrough_features_ = excluded
+        self.dropped_features_ = dropped
 
         return self
 
     def transform(self, X):
         X = X.copy()
 
-        return X.loc[
-            :,
-            [
-                column
-                for column in self.selected_features_
-                if column in X.columns
-            ]
+        columns = self.selected_features_ + [
+            col
+            for col in self.passthrough_features_
+            if col in X.columns
         ]
 
+        columns = [
+            col
+            for col in columns
+            if col in X.columns
+        ]
+
+        return X.loc[:, columns]
 
 def prepare_feature_selection_data(
     X: pd.DataFrame,
     y: pd.Series | None = None,
     preprocessed: bool = False,
     drop_sensitive: bool = True,
+    raw_credit_data: bool = False,
 ) -> pd.DataFrame:
-    """Chuẩn bị dữ liệu theo đúng preprocessing của scorecard.
+    """Chuẩn bị dữ liệu cho feature selection.
 
-    Nếu preprocessed=True, dữ liệu được giữ nguyên.
-
-    Với dữ liệu không phải credit-scoring dataset, giữ nguyên dữ liệu
-    để các hàm feature selection có thể dùng với dữ liệu test/toy.
-
-    Với dữ liệu credit-scoring raw, áp dụng:
-    1. AbnormalCodeTransformer
-    2. FeatureEngineeringTransformer
-    3. AgeBinningTransformer
-    4. DropColumnsTransformer cho SEX và ID
+    Caller phải chỉ rõ dữ liệu đã preprocessing hay là dữ liệu credit thô.
     """
     X = X.copy()
 
     if preprocessed:
         return X
 
-    # Dữ liệu toy/test hoặc dữ liệu không phải credit scoring:
-    # giữ nguyên để các hàm feature selection vẫn hoạt động.
-    is_credit_dataset = (
-        "LIMIT_BAL" in X.columns
-        and "BILL_AMT1" in X.columns
-    )
-
-    if not is_credit_dataset:
+    if not raw_credit_data:
         return X
 
     if y is None:
@@ -828,35 +838,23 @@ def prepare_feature_selection_data(
         SENSITIVE_COLUMNS,
     )
 
-    # 1. Xử lý mã bất thường và PAY_0 -> PAY_1.
-    X = AbnormalCodeTransformer().fit_transform(
-        X,
-        y,
-    )
+    # Chuẩn hóa mã bất thường và đổi PAY_0 thành PAY_1.
+    X = AbnormalCodeTransformer().fit_transform(X)
 
-    # 2. Feature engineering.
-    X = FeatureEngineeringTransformer().fit_transform(
-        X,
-        y,
-    )
+    # Tạo các đặc trưng dẫn xuất từ dữ liệu credit thô.
+    X = FeatureEngineeringTransformer().fit_transform(X)
 
-    # 3. Binning AGE.
+    # Binning AGE phải học từ training fold hiện tại.
     X = AgeBinningTransformer(
         min_bins=3,
         max_bins=8,
-    ).fit_transform(
-        X,
-        y,
-    )
+    ).fit_transform(X, y)
 
-    # 4. Loại biến nhạy cảm giống scorecard pipeline.
+    # Loại biến nhạy cảm nếu đang chuẩn bị dữ liệu cho mô hình chính thức.
     if drop_sensitive:
         X = DropColumnsTransformer(
-            columns=SENSITIVE_COLUMNS,
-        ).fit_transform(
-            X,
-            y,
-        )
+            columns=SENSITIVE_COLUMNS
+        ).fit_transform(X)
 
     return X
 
@@ -864,138 +862,92 @@ def find_high_correlation_features(
     X: pd.DataFrame,
     y: pd.Series,
     threshold: float = 0.9,
-) -> list[str]:
-    """Tìm các feature tương quan cao và loại feature có IV thấp hơn.
+    return_details: bool = False,
+):
+    """Tìm feature tương quan cao, ưu tiên giữ feature có IV cao hơn.
 
-    Với mỗi cặp feature có |correlation| > threshold:
-    - giữ feature có IV cao hơn;
-    - loại feature có IV thấp hơn;
-    - nếu IV bằng nhau, dùng tên feature để quyết định ổn định.
+    Nếu IV bằng nhau, loại feature có tên lớn hơn theo thứ tự chữ cái.
+
+    Mặc định trả về list feature bị loại để tương thích với code cũ.
+    Nếu return_details=True, trả về (to_drop, details).
     """
     X = X.copy()
+    y = pd.Series(y).reset_index(drop=True)
+    X = X.reset_index(drop=True)
 
-    y = pd.Series(
-        y
-    ).reset_index(
-        drop=True
-    )
-
-    X = X.reset_index(
-        drop=True
-    )
-
-    numeric_X = X.select_dtypes(
-        include=[np.number]
-    )
+    numeric_X = X.select_dtypes(include=[np.number])
 
     if numeric_X.shape[1] < 2:
+        if return_details:
+            return [], []
         return []
 
-    # Tính IV trên đúng tập feature hiện tại.
     iv_transformer = WoEIVTransformer(
         n_bins=5,
         iv_threshold=0.0,
     )
+    iv_transformer.fit(X, y)
+    iv_values = iv_transformer.iv_values_
 
-    iv_transformer.fit(
-        X,
-        y
-    )
-
-    iv_values = (
-        iv_transformer.iv_values_
-    )
-
-    corr_matrix = (
-        numeric_X
-        .corr()
-        .abs()
-    )
-
-    pairs = []
+    corr_matrix = numeric_X.corr().abs()
     columns = numeric_X.columns
 
+    pairs = []
+
     for i in range(len(columns)):
-        for j in range(
-            i + 1,
-            len(columns)
-        ):
+        for j in range(i + 1, len(columns)):
             feature_a = columns[i]
             feature_b = columns[j]
+            correlation = corr_matrix.loc[feature_a, feature_b]
 
-            correlation = corr_matrix.loc[
-                feature_a,
-                feature_b
-            ]
-
-            if (
-                pd.notna(correlation)
-                and correlation > threshold
-            ):
+            if pd.notna(correlation) and correlation > threshold:
                 pairs.append(
-                    (
-                        correlation,
-                        feature_a,
-                        feature_b
-                    )
+                    (float(correlation), feature_a, feature_b)
                 )
 
-    # Xét cặp có correlation cao nhất trước.
-    pairs.sort(
-        reverse=True
-    )
+    # Ưu tiên xử lý cặp có tương quan cao nhất.
+    pairs.sort(key=lambda item: (-item[0], item[1], item[2]))
 
     to_drop = set()
+    details = []
 
-    for (
-        _,
-        feature_a,
-        feature_b
-    ) in pairs:
-        if (
-            feature_a in to_drop
-            or feature_b in to_drop
-        ):
+    for correlation, feature_a, feature_b in pairs:
+        if feature_a in to_drop or feature_b in to_drop:
             continue
 
-        iv_a = iv_values.get(
-            feature_a,
-            0.0
-        )
-
-        iv_b = iv_values.get(
-            feature_b,
-            0.0
-        )
+        iv_a = iv_values.get(feature_a, 0.0)
+        iv_b = iv_values.get(feature_b, 0.0)
 
         if iv_a < iv_b:
-            to_drop.add(
-                feature_a
-            )
-
+            dropped, kept = feature_a, feature_b
         elif iv_b < iv_a:
-            to_drop.add(
-                feature_b
-            )
-
+            dropped, kept = feature_b, feature_a
         else:
-            # Tie-break ổn định,
-            # không phụ thuộc thứ tự cột.
-            to_drop.add(
-                max(
-                    feature_a,
-                    feature_b
-                )
-            )
+            dropped = max(feature_a, feature_b)
+            kept = min(feature_a, feature_b)
 
-    return sorted(to_drop)
+        to_drop.add(dropped)
+        details.append({
+            "feature": dropped,
+            "iv": iv_values.get(dropped, float("nan")),
+            "reason": "Tương quan cao",
+            "correlated_with": kept,
+            "correlation": correlation,
+        })
 
+    result = sorted(to_drop)
+
+    if return_details:
+        return result, details
+
+    return result
 
 def compute_iv_stability(
     X: pd.DataFrame,
     y: pd.Series,
     n_splits: int = 5,
     random_state: int = 42,
+    raw_credit_data: bool = False,
 ) -> pd.DataFrame:
     """Tính IV của từng feature trên từng fold CV.
 
@@ -1025,6 +977,7 @@ def compute_iv_stability(
         X_fold = prepare_feature_selection_data(
             X_fold,
             y=y_fold,
+            raw_credit_data= raw_credit_data,
         )
 
         transformer = WoEIVTransformer(
@@ -1065,17 +1018,18 @@ def compute_iv_stability(
     return result
 
 
+
 def compute_feature_importance_stability(
     X: pd.DataFrame,
     y: pd.Series,
     n_splits: int = 5,
     random_state: int = 42,
     correlation_threshold: float = 0.9,
+    raw_credit_data: bool = False,
 ) -> pd.DataFrame:
     """Đánh giá độ ổn định của feature importance qua các fold CV.
 
-    Toàn bộ preprocessing và feature selection được thực hiện
-    riêng trên training fold để tránh data leakage.
+    Preprocessing được fit riêng trên training fold để tránh data leakage.
     """
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import StratifiedKFold
@@ -1099,18 +1053,16 @@ def compute_feature_importance_stability(
         X_train = X.iloc[train_idx].copy()
         y_train = y.iloc[train_idx].copy()
 
-        # Preprocessing chỉ fit trên training fold.
         X_train = prepare_feature_selection_data(
             X_train,
             y=y_train,
+            raw_credit_data=raw_credit_data,
         )
 
-        # Chỉ sử dụng biến số.
         X_numeric = X_train.select_dtypes(
             include=[np.number]
         )
 
-        # Xử lý giá trị vô hạn và missing.
         X_numeric = X_numeric.replace(
             [np.inf, -np.inf],
             np.nan,
@@ -1120,8 +1072,6 @@ def compute_feature_importance_stability(
             X_numeric.median()
         )
 
-        # Lọc biến tương quan cao trên chính training fold.
-        # Giữ feature có IV cao hơn.
         to_drop = find_high_correlation_features(
             X_train,
             y_train,
@@ -1133,26 +1083,22 @@ def compute_feature_importance_stability(
             errors="ignore",
         )
 
-        # Chuẩn hóa trên training fold.
-        scaler = StandardScaler()
+        if X_numeric.empty:
+            raise ValueError(
+                "Không còn feature dạng số để tính feature importance."
+            )
 
-        X_train_scaled = scaler.fit_transform(
-            X_numeric
-        )
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_numeric)
 
         model = LogisticRegression(
             max_iter=1000,
             random_state=random_state,
         )
 
-        model.fit(
-            X_train_scaled,
-            y_train,
-        )
+        model.fit(X_train_scaled, y_train)
 
-        importance = np.abs(
-            model.coef_[0]
-        )
+        importance = np.abs(model.coef_[0])
 
         fold_importances.append(
             pd.Series(
@@ -1162,40 +1108,21 @@ def compute_feature_importance_stability(
             )
         )
 
-    importance_df = pd.DataFrame(
-        fold_importances
-    )
+    importance_df = pd.DataFrame(fold_importances)
 
     result = pd.DataFrame({
         "feature": importance_df.columns,
-        "importance_mean": (
-            importance_df
-            .mean(axis=0)
-            .values
-        ),
+        "importance_mean": importance_df.mean(axis=0).values,
         "importance_std": (
-            importance_df
-            .std(axis=0)
-            .fillna(0.0)
-            .values
+            importance_df.std(axis=0).fillna(0.0).values
         ),
-        "importance_min": (
-            importance_df
-            .min(axis=0)
-            .values
-        ),
-        "importance_max": (
-            importance_df
-            .max(axis=0)
-            .values
-        ),
+        "importance_min": importance_df.min(axis=0).values,
+        "importance_max": importance_df.max(axis=0).values,
     })
 
     return (
-        result
-        .sort_values(
+        result.sort_values(
             "importance_mean",
             ascending=False,
-        )
-        .reset_index(drop=True)
+        ).reset_index(drop=True)
     )
