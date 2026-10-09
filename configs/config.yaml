@@ -16,3 +16,27 @@ mlflow:
   # Có thể ghi đè bằng biến môi trường MLFLOW_TRACKING_URI (vd: server dùng chung của nhóm).
   tracking_dir: mlruns
   experiment_name: credit_scoring
+
+# Nhóm đặc trưng dùng cho reason codes và so sánh đồng thuận giữa các mô hình
+# (project_plan.md mục 3.5e). Khóa là tên biến gốc (trước one-hot), mỗi biến thuộc đúng một nhóm.
+# Phải khớp với configs/feature_freeze_v1.yaml (kiểm tra bằng src.explain.check_groups_cover).
+feature_groups:
+  lich_su_tre_han:
+    label: Lịch sử trễ hạn
+    variables: [PAY_1, PAY_2, PAY_3, PAY_4, PAY_5, PAY_6, PAY_MAX, PAY_MEAN, PAY_SLOPE,
+                PAY_LATE_CONSECUTIVE, PAY_LATE_2PLUS_COUNT]
+  muc_su_dung_han_muc:
+    label: Mức sử dụng hạn mức
+    variables: [LIMIT_BAL, UTIL_1, UTIL_2, UTIL_3, UTIL_4, UTIL_5, UTIL_6, UTIL_MEAN]
+  hanh_vi_tra_no:
+    label: Hành vi trả nợ
+    variables: [PAY_AMT1, PAY_AMT2, PAY_AMT3, PAY_AMT4, PAY_AMT5, PAY_AMT6,
+                PAY_RATIO_1, PAY_RATIO_2, PAY_RATIO_3, PAY_RATIO_4, PAY_RATIO_5, PAY_RATIO_MEAN,
+                MIN_PAY_FLAG_1, MIN_PAY_FLAG_2, MIN_PAY_FLAG_3, MIN_PAY_FLAG_4, MIN_PAY_FLAG_5,
+                MIN_PAY_FLAG_6, MIN_PAY_FLAG_COUNT]
+  bien_dong_du_no:
+    label: Dư nợ và biến động dư nợ
+    variables: [BILL_AMT1, BILL_AMT2, BILL_AMT3, BILL_AMT4, BILL_AMT5, BILL_AMT6, BILL_STD, BILL_DELTA]
+  nhan_khau_hoc:
+    label: Nhân khẩu học
+    variables: [AGE_BIN, EDUCATION, MARRIAGE]
