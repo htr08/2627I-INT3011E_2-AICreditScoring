@@ -4,20 +4,19 @@ Bao gồm:
 - build_features() tách X, y (Pipeline mô hình nằm ở src.pipelines.make_pipeline).
 - Tuần 2 - T2 (Feature Engineering):
     - create_utilization_features: tỷ lệ sử dụng hạn mức (UTIL_1..6, UTIL_MEAN)
-    - create_payment_trend_features: xu hướng trễ hạn (PAY_MEAN, PAY_MAX, PAY_SLOPE,
-      PAY_LATE_CONSECUTIVE, PAY_LATE_2PLUS_COUNT)
-    - create_payment_ratio_features: tỷ lệ thanh toán / dư nợ
-      (PAY_RATIO_1..5, PAY_RATIO_MEAN)
+    - create_payment_trend_features: xu hướng trễ hạn (PAY_MEAN, PAY_MAX, PAY_SLOPE, PAY_LATE_CONSECUTIVE, PAY_LATE_2PLUS_COUNT)
+    - create_payment_ratio_features: tỷ lệ thanh toán / dư nợ (PAY_RATIO_1..5, PAY_RATIO_MEAN)
     - create_bill_variation_features: biến động dư nợ (BILL_STD, BILL_DELTA)
-    - create_min_payment_features: cờ trả tối thiểu
-      (MIN_PAY_FLAG_1..6, MIN_PAY_FLAG_COUNT)
-    - fit_age_bins / transform_age_bins / create_age_bin_features:
-      age binning theo IV
+    - create_min_payment_features: cờ trả tối thiểu (MIN_PAY_FLAG_1..6, MIN_PAY_FLAG_COUNT)
+    - fit_age_bins / transform_age_bins / create_age_bin_features: age binning theo IV
     - FeatureEngineeringTransformer: gói các hàm trên thành một bước Pipeline
 - Tuần 2 - T3 (WoE & IV Feature Selection):
     - AgeBinningTransformer: Transformer binned AGE dựa trên IV fit từ train
     - WoEIVTransformer: Transformer tính WoE và lọc theo ngưỡng IV
-    - FeatureSelectionTransformer: lọc feature theo IV và tương quan cao
+- Tuần 2 - T4 (Lọc đặc trưng & độ ổn định):
+    - find_high_correlation_features: lọc tương quan (Spearman), giữ biến IV cao hơn
+    - FeatureSelectionTransformer: lọc theo IV + tương quan trong từng fold
+    - compute_iv_stability / compute_feature_importance_stability: độ ổn định qua các fold CV
 """
 
 from typing import List, Optional, Tuple
@@ -32,13 +31,7 @@ from src.config import load_config
 def _get_default_target_col() -> str:
     try:
         cfg = load_config()
-        return cfg.get(
-            "data",
-            {}
-        ).get(
-            "target_col",
-            "default.payment.next.month"
-        )
+        return cfg.get("data", {}).get("target_col", "default.payment.next.month")
     except Exception:
         return "default.payment.next.month"
 
@@ -53,46 +46,38 @@ def build_features(
     drop_cols: Optional[List[str]] = None,
     include_sex: bool = False,
 ) -> Tuple[pd.DataFrame, pd.Series]:
-    """Tách X và y từ DataFrame thô.
+    """Tách X và y từ DataFrame thô (cột gốc; tiền xử lý nằm trong src.pipelines.make_pipeline).
 
     Args:
-        df: DataFrame đã được lọc theo split.
-        target_col: Tên cột nhãn.
-        drop_cols: Danh sách cột cần bỏ.
-        include_sex: Nếu False thì bỏ SEX.
+        df: DataFrame đã được lọc theo split (train / valid / test).
+        target_col: Tên cột nhãn (nếu None sẽ đọc từ config data.target_col).
+        drop_cols: Danh sách cột bổ sung cần bỏ (mặc định: ["ID"]).
+        include_sex: Nếu False (mô hình chính thức) bỏ SEX; True để đối chiếu fairness.
 
     Returns:
-        (X, y)
+        (X, y): DataFrame đặc trưng và Series nhãn nhị phân (int).
+
+    Raises:
+        KeyError: Nếu target_col không tồn tại trong df.
     """
     if target_col is None:
         target_col = TARGET_COL
-
     if drop_cols is None:
         drop_cols = DROP_COLS
-
     if not include_sex:
         drop_cols = list(drop_cols) + ["SEX"]
 
     if target_col not in df.columns:
-        raise KeyError(
-            f"Không tìm thấy cột nhãn '{target_col}' trong DataFrame."
-        )
+        raise KeyError(f"Không tìm thấy cột nhãn '{target_col}' trong DataFrame.")
 
-    cols_to_drop = [
-        c for c in drop_cols
-        if c in df.columns
-    ] + [target_col]
-
+    cols_to_drop = [c for c in drop_cols if c in df.columns] + [target_col]
     X = df.drop(columns=cols_to_drop)
     y = df[target_col].astype(int)
-
     return X, y
 
 
 # Create credit utilization features from monthly bill amounts.
-def create_utilization_features(
-    df: pd.DataFrame
-) -> pd.DataFrame:
+def create_utilization_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     for i in range(1, 7):
@@ -102,11 +87,7 @@ def create_utilization_features(
             np.nan
         )
 
-    util_cols = [
-        f"UTIL_{i}"
-        for i in range(1, 7)
-    ]
-
+    util_cols = [f"UTIL_{i}" for i in range(1, 7)]
     df["UTIL_MEAN"] = df[util_cols].mean(axis=1)
 
     return df
@@ -130,10 +111,7 @@ def max_consecutive_late(values):
     for value in values:
         if value >= 2:
             current_count += 1
-            max_count = max(
-                max_count,
-                current_count
-            )
+            max_count = max(max_count, current_count)
         else:
             current_count = 0
 
@@ -141,40 +119,28 @@ def max_consecutive_late(values):
 
 
 # Create features describing payment delay trends.
-def create_payment_trend_features(
-    df: pd.DataFrame
-) -> pd.DataFrame:
+def create_payment_trend_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     # PAY_6 is the oldest month, PAY_1 is the most recent month.
-    pay_cols = [
-        f"PAY_{i}"
-        for i in range(6, 0, -1)
-    ]
+    pay_cols = [f"PAY_{i}" for i in range(6, 0, -1)]
 
     df["PAY_MEAN"] = df[pay_cols].mean(axis=1)
     df["PAY_MAX"] = df[pay_cols].max(axis=1)
-    df["PAY_SLOPE"] = df[pay_cols].apply(
-        calculate_slope,
-        axis=1
-    )
+    df["PAY_SLOPE"] = df[pay_cols].apply(calculate_slope, axis=1)
 
     df["PAY_LATE_CONSECUTIVE"] = df[pay_cols].apply(
         max_consecutive_late,
         axis=1
     )
 
-    df["PAY_LATE_2PLUS_COUNT"] = (
-        df[pay_cols] >= 2
-    ).sum(axis=1)
+    df["PAY_LATE_2PLUS_COUNT"] = (df[pay_cols] >= 2).sum(axis=1)
 
     return df
 
 
 # Create payment-to-bill ratio features.
-def create_payment_ratio_features(
-    df: pd.DataFrame
-) -> pd.DataFrame:
+def create_payment_ratio_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
     for i in range(1, 6):
@@ -187,36 +153,22 @@ def create_payment_ratio_features(
             np.nan
         )
 
-    ratio_cols = [
-        f"PAY_RATIO_{i}"
-        for i in range(1, 6)
-    ]
-
+    ratio_cols = [f"PAY_RATIO_{i}" for i in range(1, 6)]
     df["PAY_RATIO_MEAN"] = df[ratio_cols].mean(axis=1)
 
     return df
 
 
 # Create features measuring monthly bill balance variation.
-def create_bill_variation_features(
-    df: pd.DataFrame
-) -> pd.DataFrame:
+def create_bill_variation_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
 
-    bill_cols = [
-        f"BILL_AMT{i}"
-        for i in range(1, 7)
-    ]
+    bill_cols = [f"BILL_AMT{i}" for i in range(1, 7)]
 
     df["BILL_STD"] = df[bill_cols].std(axis=1)
 
     bill_delta = df[bill_cols].diff(axis=1)
-
-    df["BILL_DELTA"] = (
-        bill_delta.iloc[:, 1:]
-        .abs()
-        .mean(axis=1)
-    )
+    df["BILL_DELTA"] = bill_delta.iloc[:, 1:].abs().mean(axis=1)
 
     return df
 
@@ -238,42 +190,29 @@ def create_min_payment_features(
             0
         )
 
-    min_pay_cols = [
-        f"MIN_PAY_FLAG_{i}"
-        for i in range(1, 7)
-    ]
+    min_pay_cols = [f"MIN_PAY_FLAG_{i}" for i in range(1, 7)]
 
-    df["MIN_PAY_FLAG_COUNT"] = (
-        df[min_pay_cols].sum(axis=1)
-    )
+    df["MIN_PAY_FLAG_COUNT"] = df[min_pay_cols].sum(axis=1)
 
     return df
 
 
-# Tên các đặc trưng do FeatureEngineeringTransformer tạo ra.
+# Tên các đặc trưng do FeatureEngineeringTransformer tạo ra (feature freeze v1).
 ENGINEERED_COLUMNS = (
-    [f"UTIL_{i}" for i in range(1, 7)]
-    + ["UTIL_MEAN"]
-    + [
-        "PAY_MEAN",
-        "PAY_MAX",
-        "PAY_SLOPE",
-        "PAY_LATE_CONSECUTIVE",
-        "PAY_LATE_2PLUS_COUNT",
-    ]
-    + [f"PAY_RATIO_{i}" for i in range(1, 6)]
-    + ["PAY_RATIO_MEAN"]
+    [f"UTIL_{i}" for i in range(1, 7)] + ["UTIL_MEAN"]
+    + ["PAY_MEAN", "PAY_MAX", "PAY_SLOPE", "PAY_LATE_CONSECUTIVE", "PAY_LATE_2PLUS_COUNT"]
+    + [f"PAY_RATIO_{i}" for i in range(1, 6)] + ["PAY_RATIO_MEAN"]
     + ["BILL_STD", "BILL_DELTA"]
-    + [f"MIN_PAY_FLAG_{i}" for i in range(1, 7)]
-    + ["MIN_PAY_FLAG_COUNT"]
+    + [f"MIN_PAY_FLAG_{i}" for i in range(1, 7)] + ["MIN_PAY_FLAG_COUNT"]
 )
 
 
-class FeatureEngineeringTransformer(
-    BaseEstimator,
-    TransformerMixin
-):
-    """Gói các hàm tạo đặc trưng Tuần 2 - T2."""
+class FeatureEngineeringTransformer(BaseEstimator, TransformerMixin):
+    """Gói các hàm tạo đặc trưng Tuần 2 - T2 thành một bước của Pipeline.
+
+    Các hàm này không học tham số từ dữ liệu (stateless) nên không gây leakage.
+    Yêu cầu dữ liệu đã đổi tên PAY_0 -> PAY_1 (AbnormalCodeTransformer chạy trước).
+    """
 
     def fit(self, X, y=None):
         return self
@@ -284,42 +223,29 @@ class FeatureEngineeringTransformer(
         X = create_payment_ratio_features(X)
         X = create_bill_variation_features(X)
         X = create_min_payment_features(X)
-
         return X
 
 
 MISSING_BIN = "__MISSING__"
 
 
-def _label_missing(
-    bins: pd.Series
-) -> pd.Series:
-    """Gán NaN vào bin riêng MISSING_BIN."""
+def _label_missing(bins: pd.Series) -> pd.Series:
+    """Gán NaN (vd UTIL khi LIMIT_BAL = 0, PAY_RATIO khi dư nợ <= 0) vào bin riêng MISSING_BIN
+    để có WoE riêng, thay vì bị bỏ khi fit và bị coi là trung tính (WoE = 0) khi transform."""
     if not bins.isna().any():
         return bins
-
-    return bins.astype(object).where(
-        bins.notna(),
-        MISSING_BIN
-    )
+    return bins.astype(object).where(bins.notna(), MISSING_BIN)
 
 
-def _open_edges(
-    edges: np.ndarray
-) -> np.ndarray:
-    """Mở rộng biên ngoài cùng thành -inf/+inf."""
-    edges = np.asarray(
-        edges,
-        dtype=float
-    ).copy()
-
-    edges[0] = -np.inf
-    edges[-1] = np.inf
-
+def _open_edges(edges: np.ndarray) -> np.ndarray:
+    """Mở rộng biên ngoài cùng thành -inf/+inf để giá trị ngoài khoảng Train
+    rơi vào bin đầu/cuối thay vì thành NaN (WoE = 0)."""
+    edges = np.asarray(edges, dtype=float).copy()
+    edges[0], edges[-1] = -np.inf, np.inf
     return edges
 
 
-# Calculate Information Value (IV).
+# Calculate Information Value (IV) for a categorical or binned feature.
 def calculate_iv(
     feature: pd.Series,
     target: pd.Series
@@ -329,46 +255,25 @@ def calculate_iv(
         "target": target
     }).dropna()
 
-    grouped = data.groupby(
-        "feature",
-        observed=False
-    )["target"]
+    grouped = data.groupby("feature", observed=False)["target"]
 
-    good = grouped.apply(
-        lambda x: (x == 0).sum()
-    )
-
-    bad = grouped.apply(
-        lambda x: (x == 1).sum()
-    )
+    good = grouped.apply(lambda x: (x == 0).sum())
+    bad = grouped.apply(lambda x: (x == 1).sum())
 
     good_total = good.sum()
     bad_total = bad.sum()
 
-    good_dist = (
-        good + 0.5
-    ) / (
-        good_total + 0.5 * len(good)
-    )
+    good_dist = (good + 0.5) / (good_total + 0.5 * len(good))
+    bad_dist = (bad + 0.5) / (bad_total + 0.5 * len(bad))
 
-    bad_dist = (
-        bad + 0.5
-    ) / (
-        bad_total + 0.5 * len(bad)
-    )
+    woe = np.log(good_dist / bad_dist)
 
-    woe = np.log(
-        good_dist / bad_dist
-    )
-
-    iv = (
-        (good_dist - bad_dist) * woe
-    ).sum()
+    iv = ((good_dist - bad_dist) * woe).sum()
 
     return iv
 
 
-# Find the best age bin edges based on IV.
+# Find the best age bin edges based on IV using training data only.
 def fit_age_bins(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -380,10 +285,7 @@ def fit_age_bins(
     best_iv = -np.inf
     best_edges = None
 
-    for n_bins in range(
-        min_bins,
-        max_bins + 1
-    ):
+    for n_bins in range(min_bins, max_bins + 1):
         try:
             _, edges = pd.qcut(
                 age,
@@ -403,10 +305,7 @@ def fit_age_bins(
                 include_lowest=True
             )
 
-            iv = calculate_iv(
-                bins,
-                y_train
-            )
+            iv = calculate_iv(bins, y_train)
 
             if iv > best_iv:
                 best_iv = iv
@@ -416,14 +315,12 @@ def fit_age_bins(
             continue
 
     if best_edges is None:
-        raise ValueError(
-            "Unable to create age bins from training data."
-        )
+        raise ValueError("Unable to create age bins from training data.")
 
     return _open_edges(best_edges)
 
 
-# Apply age bins learned from training data.
+# Apply age bins learned from the training data.
 def transform_age_bins(
     df: pd.DataFrame,
     age_edges: np.ndarray
@@ -439,7 +336,7 @@ def transform_age_bins(
     return df
 
 
-# Fit age bins on training data and apply them.
+# Fit age bins on training data and apply the same bins to the dataset.
 def create_age_bin_features(
     X_train: pd.DataFrame,
     y_train: pd.Series,
@@ -458,31 +355,20 @@ def create_age_bin_features(
     return df, age_edges
 
 
-class AgeBinningTransformer(
-    BaseEstimator,
-    TransformerMixin
-):
-    """Transformer tự động phân nhóm AGE tối ưu theo IV."""
+class AgeBinningTransformer(BaseEstimator, TransformerMixin):
+    """Transformer tự động phân nhóm AGE tối ưu theo Information Value (IV)."""
 
-    def __init__(
-        self,
-        min_bins: int = 3,
-        max_bins: int = 8
-    ):
+    def __init__(self, min_bins: int = 3, max_bins: int = 8):
         self.min_bins = min_bins
         self.max_bins = max_bins
 
     def fit(self, X, y=None):
         X = X.copy()
-
         if y is None:
             self.age_edges_ = None
             return self
 
-        y = pd.Series(
-            y,
-            index=X.index
-        )
+        y = pd.Series(y, index=X.index)
 
         # Some unit tests use data without AGE.
         if "AGE" not in X.columns:
@@ -495,16 +381,11 @@ class AgeBinningTransformer(
             min_bins=self.min_bins,
             max_bins=self.max_bins
         )
-
         return self
 
     def transform(self, X):
         X = X.copy()
-
-        if (
-            self.age_edges_ is None
-            or "AGE" not in X.columns
-        ):
+        if self.age_edges_ is None or "AGE" not in X.columns:
             return X
 
         X["AGE_BIN"] = pd.cut(
@@ -512,39 +393,26 @@ class AgeBinningTransformer(
             bins=self.age_edges_,
             include_lowest=True
         )
-
-        X = X.drop(
-            columns=["AGE"]
-        )
-
+        X = X.drop(columns=["AGE"])
         return X
 
 
-class WoEIVTransformer(
-    BaseEstimator,
-    TransformerMixin
-):
-    """Transformer mã hóa Weight of Evidence (WoE)
-    và lọc theo Information Value (IV).
+class WoEIVTransformer(BaseEstimator, TransformerMixin):
+    """Transformer mã hóa Weight of Evidence (WoE) và lọc theo Information Value (IV).
+
+    Biến số có <= max_categories giá trị khác nhau (cờ 0/1, EDUCATION, PAY_*) được xử lý như
+    biến phân loại (mỗi giá trị một bin) vì qcut sẽ gộp chúng thành quá ít bin.
+    NaN của biến liên tục được gán vào bin MISSING_BIN riêng (có WoE riêng).
     """
 
-    def __init__(
-        self,
-        n_bins: int = 5,
-        iv_threshold: float = 0.02,
-        max_categories: int = 12
-    ):
+    def __init__(self, n_bins: int = 5, iv_threshold: float = 0.02, max_categories: int = 12):
         self.n_bins = n_bins
         self.iv_threshold = iv_threshold
         self.max_categories = max_categories
 
     def fit(self, X, y):
         X = X.copy()
-
-        y = pd.Series(
-            y,
-            index=X.index
-        )
+        y = pd.Series(y, index=X.index)
 
         self.bin_edges_ = {}
         self.category_maps_ = {}
@@ -555,10 +423,8 @@ class WoEIVTransformer(
             try:
                 is_continuous = (
                     pd.api.types.is_numeric_dtype(X[col])
-                    and X[col].nunique()
-                    > self.max_categories
+                    and X[col].nunique() > self.max_categories
                 )
-
                 if is_continuous:
                     _, edges = pd.qcut(
                         X[col],
@@ -566,128 +432,132 @@ class WoEIVTransformer(
                         retbins=True,
                         duplicates="drop"
                     )
-
                     edges = np.unique(edges)
-
                     if len(edges) < 2:
                         continue
-
                     edges = _open_edges(edges)
-
-                    bins = _label_missing(
-                        pd.cut(
-                            X[col],
-                            bins=edges,
-                            include_lowest=True
-                        )
-                    )
-
+                    bins = _label_missing(pd.cut(
+                        X[col],
+                        bins=edges,
+                        include_lowest=True
+                    ))
                     self.bin_edges_[col] = edges
-
                 else:
                     bins = X[col].astype(str)
+                    self.category_maps_[col] = bins.unique().tolist()
 
-                    self.category_maps_[col] = (
-                        bins.unique().tolist()
-                    )
+                data = pd.DataFrame({"bin": bins, "target": y})
+                grouped = data.groupby("bin", observed=False, sort=False)["target"]
+                good = grouped.apply(lambda x: (x == 0).sum())
+                bad = grouped.apply(lambda x: (x == 1).sum())
 
-                data = pd.DataFrame({
-                    "bin": bins,
-                    "target": y
-                })
+                good_dist = (good + 0.5) / (good.sum() + 0.5 * len(good))
+                bad_dist = (bad + 0.5) / (bad.sum() + 0.5 * len(bad))
 
-                grouped = data.groupby(
-                    "bin",
-                    observed=False,
-                    sort=False
-                )["target"]
+                woe = np.log(good_dist / bad_dist)
+                iv = ((good_dist - bad_dist) * woe).sum()
 
-                good = grouped.apply(
-                    lambda x: (x == 0).sum()
-                )
-
-                bad = grouped.apply(
-                    lambda x: (x == 1).sum()
-                )
-
-                good_dist = (
-                    good + 0.5
-                ) / (
-                    good.sum()
-                    + 0.5 * len(good)
-                )
-
-                bad_dist = (
-                    bad + 0.5
-                ) / (
-                    bad.sum()
-                    + 0.5 * len(bad)
-                )
-
-                woe = np.log(
-                    good_dist / bad_dist
-                )
-
-                iv = (
-                    (good_dist - bad_dist)
-                    * woe
-                ).sum()
-
-                self.woe_maps_[col] = (
-                    woe.to_dict()
-                )
-
+                self.woe_maps_[col] = woe.to_dict()
                 self.iv_values_[col] = iv
 
-            except (
-                TypeError,
-                ValueError
-            ):
+            except (TypeError, ValueError):
                 continue
 
         self.selected_features_ = [
-            col
-            for col, iv in self.iv_values_.items()
+            col for col, iv in self.iv_values_.items()
             if iv >= self.iv_threshold
         ]
-
         return self
 
     def transform(self, X):
         X = X.copy()
-
-        result = pd.DataFrame(
-            index=X.index
-        )
+        result = pd.DataFrame(index=X.index)
 
         for col in self.selected_features_:
             if col in self.bin_edges_:
-                bins = _label_missing(
-                    pd.cut(
-                        X[col],
-                        bins=self.bin_edges_[col],
-                        include_lowest=True
-                    )
-                )
+                bins = _label_missing(pd.cut(
+                    X[col],
+                    bins=self.bin_edges_[col],
+                    include_lowest=True
+                ))
             else:
                 bins = X[col].astype(str)
 
-            mapped = bins.map(
-                self.woe_maps_[col]
-            )
-
-            result[col] = pd.to_numeric(
-                mapped,
-                errors="coerce"
-            ).fillna(0.0)
+            mapped = bins.map(self.woe_maps_[col])
+            result[col] = pd.to_numeric(mapped, errors="coerce").fillna(0.0)
 
         return result
 
-class FeatureSelectionTransformer(
-    BaseEstimator,
-    TransformerMixin
+
+# ---------------------------------------------------------------------------
+# Tuần 2 - T4: Lọc đặc trưng (IV + tương quan) và độ ổn định qua các fold CV
+# ---------------------------------------------------------------------------
+
+def find_high_correlation_features(
+    X: pd.DataFrame,
+    y: pd.Series,
+    threshold: float = 0.9,
+    method: str = "spearman",
+    return_details: bool = False,
 ):
-    """Lọc feature theo IV và tương quan cao, đồng thời ghi lý do loại."""
+    """Tìm biến tương quan cao (|corr| > threshold); trong mỗi cặp giữ biến có IV cao hơn.
+
+    Mặc định dùng Spearman: các biến tỷ lệ (PAY_RATIO_*, UTIL_*) có đuôi rất dài, Pearson bị
+    vài giá trị cực lớn chi phối (vd PAY_RATIO_1 – PAY_RATIO_3 đạt 0.9997 theo Pearson).
+    Cặp có tương quan cao hơn được xử lý trước; IV bằng nhau thì loại biến có tên lớn hơn.
+
+    Returns:
+        List biến bị loại, hoặc (list, details) nếu return_details=True.
+    """
+    X = X.reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+    numeric_X = X.select_dtypes(include=[np.number])
+
+    if numeric_X.shape[1] < 2:
+        return ([], []) if return_details else []
+
+    iv_values = WoEIVTransformer(iv_threshold=0.0).fit(numeric_X, y).iv_values_
+    corr_matrix = numeric_X.corr(method=method).abs()
+    columns = numeric_X.columns
+
+    pairs = []
+    for i in range(len(columns)):
+        for j in range(i + 1, len(columns)):
+            corr = corr_matrix.iloc[i, j]
+            if pd.notna(corr) and corr > threshold:
+                pairs.append((float(corr), columns[i], columns[j]))
+    pairs.sort(key=lambda item: (-item[0], item[1], item[2]))
+
+    to_drop = set()
+    details = []
+    for corr, feature_a, feature_b in pairs:
+        if feature_a in to_drop or feature_b in to_drop:
+            continue
+        iv_a, iv_b = iv_values.get(feature_a, 0.0), iv_values.get(feature_b, 0.0)
+        if iv_a != iv_b:
+            dropped, kept = (feature_a, feature_b) if iv_a < iv_b else (feature_b, feature_a)
+        else:
+            dropped, kept = max(feature_a, feature_b), min(feature_a, feature_b)
+        to_drop.add(dropped)
+        details.append({
+            "feature": dropped,
+            "iv": iv_values.get(dropped, float("nan")),
+            "reason": "Tương quan cao",
+            "correlated_with": kept,
+            "correlation": corr,
+        })
+
+    result = sorted(to_drop)
+    return (result, details) if return_details else result
+
+
+class FeatureSelectionTransformer(BaseEstimator, TransformerMixin):
+    """Lọc đặc trưng theo IV rồi theo tương quan, fit trên dữ liệu train của từng fold.
+
+    passthrough_columns (vd SEX ở bản đối chiếu fairness) được giữ nguyên, không tham gia lọc.
+    Thuộc tính sau fit: iv_values_, selected_features_, passthrough_features_,
+    dropped_features_ (list dict: feature, iv, reason, correlated_with, correlation).
+    """
 
     def __init__(
         self,
@@ -704,319 +574,88 @@ class FeatureSelectionTransformer(
         self.enable_correlation_filter = enable_correlation_filter
 
     def fit(self, X, y):
-        X = X.copy()
         y = pd.Series(y, index=X.index)
-
-        # Các cột không tham gia chọn feature.
-        excluded = [
-            col
-            for col in self.passthrough_columns
-            if col in X.columns
-        ]
-
-        X_selection = X.drop(
-            columns=excluded
-        )
-
-        # Bước 1: Tính IV trên training fold hiện tại.
-        iv_transformer = WoEIVTransformer(
-            n_bins=self.n_bins,
-            iv_threshold=0.0,
-        )
-
-        iv_transformer.fit(
-            X_selection,
-            y,
-        )
+        self.passthrough_features_ = [c for c in self.passthrough_columns if c in X.columns]
+        X_selection = X.drop(columns=self.passthrough_features_)
 
         self.iv_values_ = (
-            iv_transformer.iv_values_.copy()
+            WoEIVTransformer(n_bins=self.n_bins, iv_threshold=0.0).fit(X_selection, y).iv_values_.copy()
         )
-
-        # Chọn feature đạt ngưỡng IV.
-        selected = [
-            col
-            for col in X_selection.columns
-            if self.iv_values_.get(col, 0.0)
-            >= self.iv_threshold
+        selected = [c for c in X_selection.columns if self.iv_values_.get(c, 0.0) >= self.iv_threshold]
+        dropped = [
+            {
+                "feature": c,
+                "iv": self.iv_values_.get(c, float("nan")),
+                "reason": "IV thấp",
+                "correlated_with": "",
+                "correlation": float("nan"),
+            }
+            for c in X_selection.columns
+            if c not in selected
         ]
 
-        # Ghi nhận các feature bị loại vì IV thấp.
-        dropped = []
-
-        for col in X_selection.columns:
-            iv = self.iv_values_.get(
-                col,
-                float("nan"),
-            )
-
-            if col not in selected:
-                dropped.append({
-                    "feature": col,
-                    "iv": iv,
-                    "reason": "IV thấp",
-                    "correlated_with": "",
-                    "correlation": float("nan"),
-                })
-
-        # Bước 2: Lọc tương quan nếu được bật.
         if self.enable_correlation_filter:
-            numeric_selected = (
-                X_selection[selected]
-                .select_dtypes(include=[np.number])
+            to_drop, details = find_high_correlation_features(
+                X_selection[selected],
+                y,
+                threshold=self.correlation_threshold,
+                return_details=True,
             )
+            dropped.extend(details)
+            selected = [c for c in selected if c not in to_drop]
 
-            if numeric_selected.shape[1] >= 2:
-                to_drop, correlation_details = (
-                    find_high_correlation_features(
-                        numeric_selected,
-                        y,
-                        threshold=self.correlation_threshold,
-                        return_details=True,
-                    )
-                )
-
-                dropped.extend(correlation_details)
-
-                selected = [
-                    col
-                    for col in selected
-                    if col not in to_drop
-                ]
-
-        # Lưu kết quả để transform() và train.py sử dụng.
         self.selected_features_ = selected
-        self.passthrough_features_ = excluded
         self.dropped_features_ = dropped
-
         return self
 
     def transform(self, X):
-        X = X.copy()
+        columns = self.selected_features_ + self.passthrough_features_
+        return X.loc[:, [c for c in columns if c in X.columns]].copy()
 
-        columns = self.selected_features_ + [
-            col
-            for col in self.passthrough_features_
-            if col in X.columns
-        ]
 
-        columns = [
-            col
-            for col in columns
-            if col in X.columns
-        ]
-
-        return X.loc[:, columns]
-
-def prepare_feature_selection_data(
-    X: pd.DataFrame,
-    y: pd.Series | None = None,
-    preprocessed: bool = False,
-    drop_sensitive: bool = True,
-    raw_credit_data: bool = False,
-) -> pd.DataFrame:
-    """Chuẩn bị dữ liệu cho feature selection.
-
-    Caller phải chỉ rõ dữ liệu đã preprocessing hay là dữ liệu credit thô.
-    """
-    X = X.copy()
-
-    if preprocessed:
+def _fit_frame(frame_pipeline, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    """Fit bản sao frame_pipeline trên (X, y) của fold hiện tại; None → giữ nguyên X."""
+    if frame_pipeline is None:
         return X
+    from sklearn.base import clone
 
-    if not raw_credit_data:
-        return X
+    return clone(frame_pipeline).fit_transform(X, y)
 
-    if y is None:
-        raise ValueError(
-            "y is required when preparing raw credit-scoring data."
-        )
-
-    from src.preprocessing import (
-        AbnormalCodeTransformer,
-        DropColumnsTransformer,
-        SENSITIVE_COLUMNS,
-    )
-
-    # Chuẩn hóa mã bất thường và đổi PAY_0 thành PAY_1.
-    X = AbnormalCodeTransformer().fit_transform(X)
-
-    # Tạo các đặc trưng dẫn xuất từ dữ liệu credit thô.
-    X = FeatureEngineeringTransformer().fit_transform(X)
-
-    # Binning AGE phải học từ training fold hiện tại.
-    X = AgeBinningTransformer(
-        min_bins=3,
-        max_bins=8,
-    ).fit_transform(X, y)
-
-    # Loại biến nhạy cảm nếu đang chuẩn bị dữ liệu cho mô hình chính thức.
-    if drop_sensitive:
-        X = DropColumnsTransformer(
-            columns=SENSITIVE_COLUMNS
-        ).fit_transform(X)
-
-    return X
-
-def find_high_correlation_features(
-    X: pd.DataFrame,
-    y: pd.Series,
-    threshold: float = 0.9,
-    return_details: bool = False,
-):
-    """Tìm feature tương quan cao, ưu tiên giữ feature có IV cao hơn.
-
-    Nếu IV bằng nhau, loại feature có tên lớn hơn theo thứ tự chữ cái.
-
-    Mặc định trả về list feature bị loại để tương thích với code cũ.
-    Nếu return_details=True, trả về (to_drop, details).
-    """
-    X = X.copy()
-    y = pd.Series(y).reset_index(drop=True)
-    X = X.reset_index(drop=True)
-
-    numeric_X = X.select_dtypes(include=[np.number])
-
-    if numeric_X.shape[1] < 2:
-        if return_details:
-            return [], []
-        return []
-
-    iv_transformer = WoEIVTransformer(
-        n_bins=5,
-        iv_threshold=0.0,
-    )
-    iv_transformer.fit(X, y)
-    iv_values = iv_transformer.iv_values_
-
-    corr_matrix = numeric_X.corr().abs()
-    columns = numeric_X.columns
-
-    pairs = []
-
-    for i in range(len(columns)):
-        for j in range(i + 1, len(columns)):
-            feature_a = columns[i]
-            feature_b = columns[j]
-            correlation = corr_matrix.loc[feature_a, feature_b]
-
-            if pd.notna(correlation) and correlation > threshold:
-                pairs.append(
-                    (float(correlation), feature_a, feature_b)
-                )
-
-    # Ưu tiên xử lý cặp có tương quan cao nhất.
-    pairs.sort(key=lambda item: (-item[0], item[1], item[2]))
-
-    to_drop = set()
-    details = []
-
-    for correlation, feature_a, feature_b in pairs:
-        if feature_a in to_drop or feature_b in to_drop:
-            continue
-
-        iv_a = iv_values.get(feature_a, 0.0)
-        iv_b = iv_values.get(feature_b, 0.0)
-
-        if iv_a < iv_b:
-            dropped, kept = feature_a, feature_b
-        elif iv_b < iv_a:
-            dropped, kept = feature_b, feature_a
-        else:
-            dropped = max(feature_a, feature_b)
-            kept = min(feature_a, feature_b)
-
-        to_drop.add(dropped)
-        details.append({
-            "feature": dropped,
-            "iv": iv_values.get(dropped, float("nan")),
-            "reason": "Tương quan cao",
-            "correlated_with": kept,
-            "correlation": correlation,
-        })
-
-    result = sorted(to_drop)
-
-    if return_details:
-        return result, details
-
-    return result
 
 def compute_iv_stability(
     X: pd.DataFrame,
     y: pd.Series,
     n_splits: int = 5,
     random_state: int = 42,
-    raw_credit_data: bool = False,
+    frame_pipeline=None,
 ) -> pd.DataFrame:
-    """Tính IV của từng feature trên từng fold CV.
+    """IV của từng biến trên phần train của từng fold CV: mean, std, min, max, cv (= std/mean).
 
-    Với dữ liệu credit-scoring raw, toàn bộ preprocessing có học tham số
-    được fit riêng trên training fold để tránh data leakage.
+    frame_pipeline: Pipeline chưa fit, biến cột gốc thành bộ đặc trưng cần đánh giá
+    (src.pipelines.build_feature_frame_pipeline). Được clone và fit lại trong từng fold,
+    nên các bước học từ nhãn (age binning) không dùng dữ liệu ngoài fold.
     """
     from sklearn.model_selection import StratifiedKFold
 
     X = X.reset_index(drop=True)
     y = pd.Series(y).reset_index(drop=True)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
-    cv = StratifiedKFold(
-        n_splits=n_splits,
-        shuffle=True,
-        random_state=random_state,
-    )
-
-    fold_ivs = []
-
-    for fold, (train_idx, _) in enumerate(
-        cv.split(X, y),
-        start=1,
-    ):
-        X_fold = X.iloc[train_idx].copy()
-        y_fold = y.iloc[train_idx].copy()
-
-        X_fold = prepare_feature_selection_data(
-            X_fold,
-            y=y_fold,
-            raw_credit_data= raw_credit_data,
-        )
-
-        transformer = WoEIVTransformer(
-            n_bins=5,
-            iv_threshold=0.0,
-        )
-
-        transformer.fit(
-            X_fold,
-            y_fold,
-        )
-
-        fold_iv = transformer.iv_values_.copy()
-
-        for feature, iv in fold_iv.items():
-            fold_ivs.append(
-                {
-                    "fold": fold,
-                    "feature": feature,
-                    "iv": iv,
-                }
-            )
-
-    fold_df = pd.DataFrame(fold_ivs)
+    rows = []
+    for fold, (train_idx, _) in enumerate(cv.split(X, y), start=1):
+        X_fold, y_fold = X.iloc[train_idx], y.iloc[train_idx]
+        X_fold = _fit_frame(frame_pipeline, X_fold, y_fold)
+        iv_values = WoEIVTransformer(iv_threshold=0.0).fit(X_fold, y_fold).iv_values_
+        rows += [{"fold": fold, "feature": f, "iv": iv} for f, iv in iv_values.items()]
 
     result = (
-        fold_df
+        pd.DataFrame(rows)
         .groupby("feature")["iv"]
-        .agg(
-            iv_mean="mean",
-            iv_std="std",
-            iv_min="min",
-            iv_max="max",
-        )
+        .agg(iv_mean="mean", iv_std="std", iv_min="min", iv_max="max")
         .reset_index()
     )
-
-    return result
-
+    result["iv_cv"] = result["iv_std"] / result["iv_mean"]
+    return result.sort_values("iv_mean", ascending=False).reset_index(drop=True)
 
 
 def compute_feature_importance_stability(
@@ -1025,11 +664,12 @@ def compute_feature_importance_stability(
     n_splits: int = 5,
     random_state: int = 42,
     correlation_threshold: float = 0.9,
-    raw_credit_data: bool = False,
+    frame_pipeline=None,
 ) -> pd.DataFrame:
-    """Đánh giá độ ổn định của feature importance qua các fold CV.
+    """|hệ số| Logistic Regression (biến numeric đã chuẩn hoá) qua các fold CV.
 
-    Preprocessing được fit riêng trên training fold để tránh data leakage.
+    Lọc tương quan được thực hiện trong từng fold nên một biến có thể chỉ được chọn ở một số fold;
+    n_folds_selected ghi nhận số fold đó, và std chỉ có nghĩa khi n_folds_selected >= 2.
     """
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import StratifiedKFold
@@ -1037,92 +677,31 @@ def compute_feature_importance_stability(
 
     X = X.reset_index(drop=True)
     y = pd.Series(y).reset_index(drop=True)
-
-    cv = StratifiedKFold(
-        n_splits=n_splits,
-        shuffle=True,
-        random_state=random_state,
-    )
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
     fold_importances = []
+    for fold, (train_idx, _) in enumerate(cv.split(X, y), start=1):
+        X_fold, y_fold = X.iloc[train_idx], y.iloc[train_idx]
+        X_fold = _fit_frame(frame_pipeline, X_fold, y_fold)
 
-    for fold, (train_idx, _) in enumerate(
-        cv.split(X, y),
-        start=1,
-    ):
-        X_train = X.iloc[train_idx].copy()
-        y_train = y.iloc[train_idx].copy()
-
-        X_train = prepare_feature_selection_data(
-            X_train,
-            y=y_train,
-            raw_credit_data=raw_credit_data,
-        )
-
-        X_numeric = X_train.select_dtypes(
-            include=[np.number]
-        )
-
-        X_numeric = X_numeric.replace(
-            [np.inf, -np.inf],
-            np.nan,
-        )
-
-        X_numeric = X_numeric.fillna(
-            X_numeric.median()
-        )
-
-        to_drop = find_high_correlation_features(
-            X_train,
-            y_train,
-            threshold=correlation_threshold,
-        )
-
-        X_numeric = X_numeric.drop(
-            columns=to_drop,
-            errors="ignore",
-        )
-
+        X_numeric = X_fold.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+        X_numeric = X_numeric.fillna(X_numeric.median())
+        to_drop = find_high_correlation_features(X_numeric, y_fold, threshold=correlation_threshold)
+        X_numeric = X_numeric.drop(columns=to_drop)
         if X_numeric.empty:
-            raise ValueError(
-                "Không còn feature dạng số để tính feature importance."
-            )
+            raise ValueError("Không còn biến numeric để tính feature importance.")
 
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_numeric)
-
-        model = LogisticRegression(
-            max_iter=1000,
-            random_state=random_state,
-        )
-
-        model.fit(X_train_scaled, y_train)
-
-        importance = np.abs(model.coef_[0])
-
-        fold_importances.append(
-            pd.Series(
-                importance,
-                index=X_numeric.columns,
-                name=f"fold_{fold}",
-            )
-        )
+        model = LogisticRegression(max_iter=1000, random_state=random_state)
+        model.fit(StandardScaler().fit_transform(X_numeric), y_fold)
+        fold_importances.append(pd.Series(np.abs(model.coef_[0]), index=X_numeric.columns, name=fold))
 
     importance_df = pd.DataFrame(fold_importances)
-
     result = pd.DataFrame({
         "feature": importance_df.columns,
+        "n_folds_selected": importance_df.notna().sum(axis=0).values,
         "importance_mean": importance_df.mean(axis=0).values,
-        "importance_std": (
-            importance_df.std(axis=0).fillna(0.0).values
-        ),
+        "importance_std": importance_df.std(axis=0).values,
         "importance_min": importance_df.min(axis=0).values,
         "importance_max": importance_df.max(axis=0).values,
     })
-
-    return (
-        result.sort_values(
-            "importance_mean",
-            ascending=False,
-        ).reset_index(drop=True)
-    )
+    return result.sort_values("importance_mean", ascending=False).reset_index(drop=True)

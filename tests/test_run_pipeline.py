@@ -45,3 +45,13 @@ def test_run_pipeline_cli_dispatch_all(monkeypatch):
     mock_adv.assert_called_once_with(include_sex=False)
     mock_boost.assert_called_once_with(include_sex=False)
     mock_imb.assert_called_once_with(include_sex=False)
+
+
+def test_run_pipeline_cli_dispatch_scorecard(monkeypatch):
+    """--mode scorecard --feature-selection gọi train_scorecard với đúng tham số."""
+    mock_scorecard = MagicMock()
+    monkeypatch.setattr("scripts.run_pipeline.train_scorecard", mock_scorecard)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "scorecard", "--feature-selection"])
+
+    main()
+    mock_scorecard.assert_called_once_with(include_sex=False, enable_feature_selection=True)

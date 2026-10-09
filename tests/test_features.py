@@ -1,5 +1,3 @@
-from unittest import result
-
 import numpy as np
 import pandas as pd
 from pandas import DataFrame
@@ -23,7 +21,7 @@ from src.features import (
     compute_feature_importance_stability,
     FeatureSelectionTransformer,
 )
-from src.pipelines import build_scorecard_pipeline
+from src.pipelines import build_feature_frame_pipeline, build_scorecard_pipeline
 
 # Test credit utilization features.
 def test_create_utilization_features():
@@ -592,3 +590,47 @@ def test_feature_selection_on_raw_credit_data(raw_credit_df: DataFrame):
 
     assert "ID" not in selected.selected_features_
     assert "SEX" not in selected.selected_features_
+
+def test_find_high_correlation_uses_spearman_against_outliers():
+    """Hai biến độc lập nhưng cùng có một giá trị cực lớn: Pearson ~1, Spearman thấp -> không loại."""
+    rng = np.random.default_rng(0)
+    a, b = rng.random(200), rng.random(200)
+    a[0], b[0] = 1e6, 1e6
+    X = pd.DataFrame({"ratio_a": a, "ratio_b": b})
+    y = pd.Series(rng.integers(0, 2, 200))
+
+    assert find_high_correlation_features(X, y, method="pearson") != []
+    assert find_high_correlation_features(X, y) == []
+
+
+def test_iv_stability_on_feature_frame(raw_credit_df: DataFrame):
+    """Độ ổn định IV phải tính trên bộ đặc trưng freeze v1 (có biến dẫn xuất, AGE_BIN), không phải cột gốc."""
+    from src.features import compute_iv_stability
+
+    X, y = _split_xy(raw_credit_df)
+    result = compute_iv_stability(X, y, n_splits=3, frame_pipeline=build_feature_frame_pipeline())
+
+    features = set(result["feature"])
+    assert {"PAY_MAX", "UTIL_MEAN", "AGE_BIN"} <= features
+    assert not {"AGE", "SEX", "ID", "PAY_0"} & features
+    assert (result["iv_min"] <= result["iv_max"]).all()
+
+
+def test_feature_importance_reports_folds_selected():
+    """Biến chỉ được chọn ở một phần các fold phải có n_folds_selected < n_splits, std không bị gán 0."""
+    rng = np.random.default_rng(1)
+    n = 300
+    signal = rng.normal(size=n)
+    X = pd.DataFrame({
+        "signal": signal,
+        "near_copy": signal + rng.normal(scale=0.05, size=n),
+        "noise": rng.normal(size=n),
+    })
+    y = pd.Series((signal + rng.normal(scale=1.0, size=n) > 0).astype(int))
+
+    result = compute_feature_importance_stability(X, y, n_splits=5, random_state=42).set_index("feature")
+
+    assert result["n_folds_selected"].max() == 5
+    assert result.loc[["signal", "near_copy"], "n_folds_selected"].sum() == 5
+    single = result[result["n_folds_selected"] == 1]
+    assert single["importance_std"].isna().all()

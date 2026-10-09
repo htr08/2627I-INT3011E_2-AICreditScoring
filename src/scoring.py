@@ -36,3 +36,39 @@ def base_points(base_logit, base_score=BASE_SCORE, base_odds=BASE_ODDS, pdo=PDO)
 def shap_to_points(shap_logit, pdo=PDO):
     """SHAP trên thang logit(PD) đã hiệu chuẩn -> điểm đóng góp (dương = tăng điểm)."""
     return -np.asarray(shap_logit) * pdo / np.log(2)
+
+
+def scorecard_points_table(pipeline, base_score=BASE_SCORE, base_odds=BASE_ODDS, pdo=PDO):
+    """Bảng điểm của Logistic Scorecard (build_scorecard_pipeline đã fit) theo cùng thang PDO.
+
+    logit(PD) = a + sum_j b_j * WoE_j, nên Score = Offset - Factor * logit(PD) tách thành
+    điểm nền (Offset - Factor * a) cộng điểm từng thuộc tính (-Factor * b_j * WoE_ij).
+    Tổng điểm của một hồ sơ (chưa clip) bằng pd_to_score(PD, clip=None).
+    Giá trị chưa gặp khi fit nhận WoE = 0, tức 0 điểm. Với SignConstrainedLogisticRegression,
+    chỉ các biến còn lại sau khi loại hệ số sai dấu (model.selected_features_) có trong bảng.
+    """
+    import pandas as pd
+
+    woe = pipeline.named_steps["woe_iv"]
+    model = pipeline.named_steps["model"]
+    factor, _ = pdo_params(base_score, base_odds, pdo)
+    features = getattr(model, "selected_features_", woe.selected_features_)
+    coefs = dict(zip(features, model.coef_[0]))
+
+    rows = [{
+        "feature": "(base)",
+        "bin": "",
+        "woe": np.nan,
+        "coef": float(model.intercept_[0]),
+        "points": float(base_points(model.intercept_[0], base_score, base_odds, pdo)),
+    }]
+    for feature in features:
+        for bin_label, woe_value in woe.woe_maps_[feature].items():
+            rows.append({
+                "feature": feature,
+                "bin": str(bin_label),
+                "woe": float(woe_value),
+                "coef": float(coefs[feature]),
+                "points": float(-factor * coefs[feature] * woe_value),
+            })
+    return pd.DataFrame(rows)
