@@ -17,7 +17,8 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from app.explanation import BILL_VOLATILITY, DELINQUENCY, DEMOGRAPHICS, REPAYMENT, UTILIZATION, Explanation
+from app.explanation import DEMOGRAPHICS, Explanation
+from src.explain import load_feature_groups, variable_to_group
 from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS
 
 REGISTRY_NAME = "logreg_baseline"
@@ -26,18 +27,20 @@ REGISTRY_ALIAS = "baseline"
 INPUT_COLUMNS = CATEGORICAL_COLUMNS + NUMERIC_COLUMNS
 
 
+# Biến -> nhóm theo configs/config.yaml (feature_groups). AGE (cột gốc trước binning) và SEX (chỉ có ở
+# phiên bản đối chiếu fairness) không có trong feature freeze v1 nên được gán thêm vào nhóm nhân khẩu học.
+_GROUP_LABELS = {key: spec["label"] for key, spec in load_feature_groups().items()}
+_COLUMN_TO_GROUP = {
+    **{var: _GROUP_LABELS[key] for var, key in variable_to_group(load_feature_groups()).items()},
+    "AGE": DEMOGRAPHICS,
+    "SEX": DEMOGRAPHICS,
+}
+
+
 def feature_group(column: str) -> str:
     """Cột trước khi encode (cột gốc hoặc đặc trưng T2) -> nhóm đặc trưng cho reason codes."""
-    if column.startswith(("PAY_AMT", "PAY_RATIO", "MIN_PAY_FLAG")):
-        return REPAYMENT
-    if column.startswith("PAY_"):
-        return DELINQUENCY
-    if column in {"BILL_STD", "BILL_DELTA"}:
-        return BILL_VOLATILITY
-    if column == "LIMIT_BAL" or column.startswith(("BILL_AMT", "UTIL_")):
-        return UTILIZATION
-    if column in {"AGE", "AGE_BIN", "EDUCATION", "MARRIAGE", "SEX"}:
-        return DEMOGRAPHICS
+    if column in _COLUMN_TO_GROUP:
+        return _COLUMN_TO_GROUP[column]
     raise ValueError(f"Chưa gán nhóm đặc trưng cho cột '{column}'.")
 
 
