@@ -9,7 +9,7 @@ Chạy chính thức:
 import hashlib
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import mlflow
 import mlflow.sklearn
@@ -25,7 +25,8 @@ from src.config import load_config
 from src.data_split import load_split_data
 from src.evaluate import evaluate_predictions
 from src.features import build_features
-from src.pipelines import make_pipeline
+from src.pipelines import build_scorecard_pipeline, make_pipeline
+from src.scoring import scorecard_points_table
 from src.tracking import setup_mlflow
 
 logger = logging.getLogger(__name__)
@@ -150,6 +151,7 @@ def run_cv(
     y,
     n_splits: int = N_SPLITS,
     random_state: Optional[int] = None,
+    on_fold_fit: Optional[Callable] = None,
 ) -> List[Dict]:
     """Chạy Stratified K-Fold CV, trả về list metrics mỗi fold.
 
@@ -159,6 +161,8 @@ def run_cv(
         y: Series nhãn nhị phân.
         n_splits: Số fold (mặc định 5).
         random_state: Seed cho StratifiedKFold (nếu None sẽ đọc từ config).
+        on_fold_fit: Tuỳ chọn on_fold_fit(fold, pipeline) gọi sau khi fit mỗi fold, dùng để thu thập
+            thông tin của pipeline đã fit (vd biến bị loại ở bước feature_selection).
 
     Returns:
         List[Dict]: Mỗi phần tử là dict metrics của 1 fold (có thêm key "fold").
@@ -172,6 +176,8 @@ def run_cv(
         y_tr, y_val = y.iloc[train_idx], y.iloc[val_idx]
 
         pipeline.fit(X_tr, y_tr)
+        if on_fold_fit is not None:
+            on_fold_fit(fold, pipeline)
         y_proba = pipeline.predict_proba(X_val)[:, 1]
 
         all_metrics = evaluate_predictions(y_val.to_numpy(), y_proba)
@@ -400,3 +406,86 @@ def train_imbalance_experiments(include_sex: bool = False) -> None:
         register_model=False,
     )
 
+
+def train_scorecard(include_sex: bool = False, enable_feature_selection: bool = False) -> Dict[str, tuple]:
+    """Huấn luyện Logistic Scorecard (WoE) với 5-fold CV, log MLflow và bảng điểm (Tuần 2 - T5).
+
+    Mô hình chính thức (include_sex=False) được đăng ký "logistic_scorecard" alias "scorecard";
+    bản có SEX / bản bật feature selection chỉ log metrics, không đăng ký.
+    """
+    cfg = load_config()
+    random_state = cfg.get("random_state", 42)
+    target_col = cfg.get("data", {}).get("target_col", "default.payment.next.month")
+
+    setup_mlflow()
+    train_df, _, _ = load_split_data()
+    X, y = build_features(train_df, target_col=target_col, include_sex=include_sex)
+
+    run_name = "logistic_scorecard"
+    if enable_feature_selection:
+        run_name += "_feature_selection"
+    if include_sex:
+        run_name += "_with_sex"
+    logger.info("=== %s ===", run_name)
+
+    def make_scorecard():
+        return build_scorecard_pipeline(
+            drop_sensitive=not include_sex,
+            enable_feature_selection=enable_feature_selection,
+        )
+
+    fold_metrics = run_cv(make_scorecard(), X, y, n_splits=N_SPLITS, random_state=random_state)
+    summary = summarize_folds(fold_metrics)
+
+    with mlflow.start_run(run_name=run_name):
+        mlflow.log_params({
+            "model": "logistic_scorecard",
+            "n_splits": N_SPLITS,
+            "n_input_columns": X.shape[1],
+            "enable_feature_selection": enable_feature_selection,
+        })
+        for metric, (mean, std) in summary.items():
+            mlflow.log_metric(f"{metric}_mean", mean)
+            mlflow.log_metric(f"{metric}_std", std)
+        for m in fold_metrics:
+            for k, v in m.items():
+                if k != "fold":
+                    mlflow.log_metric(f"{k}_fold", v, step=m["fold"])
+
+        tags = {
+            "train_size": len(X),
+            "default_rate": round(float(y.mean()), 4),
+            "feature_strategy": "feature_freeze_v1",
+            "imbalance_strategy": "none",
+            "include_sex": include_sex,
+            "random_state": random_state,
+            "target_col": target_col,
+            "task": "scorecard_cv",
+        }
+        tags.update(get_data_version_tags())
+        mlflow.set_tags(tags)
+
+        # Mô hình cuối: fit trên toàn bộ Train; bảng điểm theo PDO (src.scoring) log dạng artifact.
+        pipe = make_scorecard().fit(X, y)
+        points = scorecard_points_table(pipe)
+        mlflow.log_text(points.to_csv(index=False), "scorecard_points.csv")
+        mlflow.log_metric("n_scorecard_features", points["feature"].nunique() - 1)
+
+        should_register = not include_sex and not enable_feature_selection
+        model_info = mlflow.sklearn.log_model(
+            sk_model=pipe,
+            artifact_path="model",
+            signature=infer_signature(X, pipe.predict_proba(X)),
+            registered_model_name="logistic_scorecard" if should_register else None,
+        )
+        if should_register:
+            MlflowClient().set_registered_model_alias(
+                name="logistic_scorecard",
+                alias="scorecard",
+                version=model_info.registered_model_version,
+            )
+
+    logger.info("  → AUC: %.4f ± %.4f", *summary["roc_auc"])
+    logger.info("  → KS:  %.4f ± %.4f", *summary["ks"])
+    logger.info("  → Gini:%.4f ± %.4f\n", *summary["gini"])
+    return summary

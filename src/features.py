@@ -13,6 +13,10 @@ Bao gồm:
 - Tuần 2 - T3 (WoE & IV Feature Selection):
     - AgeBinningTransformer: Transformer binned AGE dựa trên IV fit từ train
     - WoEIVTransformer: Transformer tính WoE và lọc theo ngưỡng IV
+- Tuần 2 - T4 (Lọc đặc trưng & độ ổn định):
+    - find_high_correlation_features: lọc tương quan (Spearman), giữ biến IV cao hơn
+    - FeatureSelectionTransformer: lọc theo IV + tương quan trong từng fold
+    - compute_iv_stability / compute_feature_importance_stability: độ ổn định qua các fold CV
 """
 
 from typing import List, Optional, Tuple
@@ -483,3 +487,221 @@ class WoEIVTransformer(BaseEstimator, TransformerMixin):
             result[col] = pd.to_numeric(mapped, errors="coerce").fillna(0.0)
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# Tuần 2 - T4: Lọc đặc trưng (IV + tương quan) và độ ổn định qua các fold CV
+# ---------------------------------------------------------------------------
+
+def find_high_correlation_features(
+    X: pd.DataFrame,
+    y: pd.Series,
+    threshold: float = 0.9,
+    method: str = "spearman",
+    return_details: bool = False,
+):
+    """Tìm biến tương quan cao (|corr| > threshold); trong mỗi cặp giữ biến có IV cao hơn.
+
+    Mặc định dùng Spearman: các biến tỷ lệ (PAY_RATIO_*, UTIL_*) có đuôi rất dài, Pearson bị
+    vài giá trị cực lớn chi phối (vd PAY_RATIO_1 – PAY_RATIO_3 đạt 0.9997 theo Pearson).
+    Cặp có tương quan cao hơn được xử lý trước; IV bằng nhau thì loại biến có tên lớn hơn.
+
+    Returns:
+        List biến bị loại, hoặc (list, details) nếu return_details=True.
+    """
+    X = X.reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+    numeric_X = X.select_dtypes(include=[np.number])
+
+    if numeric_X.shape[1] < 2:
+        return ([], []) if return_details else []
+
+    iv_values = WoEIVTransformer(iv_threshold=0.0).fit(numeric_X, y).iv_values_
+    corr_matrix = numeric_X.corr(method=method).abs()
+    columns = numeric_X.columns
+
+    pairs = []
+    for i in range(len(columns)):
+        for j in range(i + 1, len(columns)):
+            corr = corr_matrix.iloc[i, j]
+            if pd.notna(corr) and corr > threshold:
+                pairs.append((float(corr), columns[i], columns[j]))
+    pairs.sort(key=lambda item: (-item[0], item[1], item[2]))
+
+    to_drop = set()
+    details = []
+    for corr, feature_a, feature_b in pairs:
+        if feature_a in to_drop or feature_b in to_drop:
+            continue
+        iv_a, iv_b = iv_values.get(feature_a, 0.0), iv_values.get(feature_b, 0.0)
+        if iv_a != iv_b:
+            dropped, kept = (feature_a, feature_b) if iv_a < iv_b else (feature_b, feature_a)
+        else:
+            dropped, kept = max(feature_a, feature_b), min(feature_a, feature_b)
+        to_drop.add(dropped)
+        details.append({
+            "feature": dropped,
+            "iv": iv_values.get(dropped, float("nan")),
+            "reason": "Tương quan cao",
+            "correlated_with": kept,
+            "correlation": corr,
+        })
+
+    result = sorted(to_drop)
+    return (result, details) if return_details else result
+
+
+class FeatureSelectionTransformer(BaseEstimator, TransformerMixin):
+    """Lọc đặc trưng theo IV rồi theo tương quan, fit trên dữ liệu train của từng fold.
+
+    passthrough_columns (vd SEX ở bản đối chiếu fairness) được giữ nguyên, không tham gia lọc.
+    Thuộc tính sau fit: iv_values_, selected_features_, passthrough_features_,
+    dropped_features_ (list dict: feature, iv, reason, correlated_with, correlation).
+    """
+
+    def __init__(
+        self,
+        iv_threshold: float = 0.02,
+        correlation_threshold: float = 0.9,
+        n_bins: int = 5,
+        passthrough_columns: tuple = (),
+        enable_correlation_filter: bool = True,
+    ):
+        self.iv_threshold = iv_threshold
+        self.correlation_threshold = correlation_threshold
+        self.n_bins = n_bins
+        self.passthrough_columns = passthrough_columns
+        self.enable_correlation_filter = enable_correlation_filter
+
+    def fit(self, X, y):
+        y = pd.Series(y, index=X.index)
+        self.passthrough_features_ = [c for c in self.passthrough_columns if c in X.columns]
+        X_selection = X.drop(columns=self.passthrough_features_)
+
+        self.iv_values_ = (
+            WoEIVTransformer(n_bins=self.n_bins, iv_threshold=0.0).fit(X_selection, y).iv_values_.copy()
+        )
+        selected = [c for c in X_selection.columns if self.iv_values_.get(c, 0.0) >= self.iv_threshold]
+        dropped = [
+            {
+                "feature": c,
+                "iv": self.iv_values_.get(c, float("nan")),
+                "reason": "IV thấp",
+                "correlated_with": "",
+                "correlation": float("nan"),
+            }
+            for c in X_selection.columns
+            if c not in selected
+        ]
+
+        if self.enable_correlation_filter:
+            to_drop, details = find_high_correlation_features(
+                X_selection[selected],
+                y,
+                threshold=self.correlation_threshold,
+                return_details=True,
+            )
+            dropped.extend(details)
+            selected = [c for c in selected if c not in to_drop]
+
+        self.selected_features_ = selected
+        self.dropped_features_ = dropped
+        return self
+
+    def transform(self, X):
+        columns = self.selected_features_ + self.passthrough_features_
+        return X.loc[:, [c for c in columns if c in X.columns]].copy()
+
+
+def _fit_frame(frame_pipeline, X: pd.DataFrame, y: pd.Series) -> pd.DataFrame:
+    """Fit bản sao frame_pipeline trên (X, y) của fold hiện tại; None → giữ nguyên X."""
+    if frame_pipeline is None:
+        return X
+    from sklearn.base import clone
+
+    return clone(frame_pipeline).fit_transform(X, y)
+
+
+def compute_iv_stability(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+    random_state: int = 42,
+    frame_pipeline=None,
+) -> pd.DataFrame:
+    """IV của từng biến trên phần train của từng fold CV: mean, std, min, max, cv (= std/mean).
+
+    frame_pipeline: Pipeline chưa fit, biến cột gốc thành bộ đặc trưng cần đánh giá
+    (src.pipelines.build_feature_frame_pipeline). Được clone và fit lại trong từng fold,
+    nên các bước học từ nhãn (age binning) không dùng dữ liệu ngoài fold.
+    """
+    from sklearn.model_selection import StratifiedKFold
+
+    X = X.reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+
+    rows = []
+    for fold, (train_idx, _) in enumerate(cv.split(X, y), start=1):
+        X_fold, y_fold = X.iloc[train_idx], y.iloc[train_idx]
+        X_fold = _fit_frame(frame_pipeline, X_fold, y_fold)
+        iv_values = WoEIVTransformer(iv_threshold=0.0).fit(X_fold, y_fold).iv_values_
+        rows += [{"fold": fold, "feature": f, "iv": iv} for f, iv in iv_values.items()]
+
+    result = (
+        pd.DataFrame(rows)
+        .groupby("feature")["iv"]
+        .agg(iv_mean="mean", iv_std="std", iv_min="min", iv_max="max")
+        .reset_index()
+    )
+    result["iv_cv"] = result["iv_std"] / result["iv_mean"]
+    return result.sort_values("iv_mean", ascending=False).reset_index(drop=True)
+
+
+def compute_feature_importance_stability(
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_splits: int = 5,
+    random_state: int = 42,
+    correlation_threshold: float = 0.9,
+    frame_pipeline=None,
+) -> pd.DataFrame:
+    """|hệ số| Logistic Regression (biến numeric đã chuẩn hoá) qua các fold CV.
+
+    Lọc tương quan được thực hiện trong từng fold nên một biến có thể chỉ được chọn ở một số fold;
+    n_folds_selected ghi nhận số fold đó, và std chỉ có nghĩa khi n_folds_selected >= 2.
+    """
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.preprocessing import StandardScaler
+
+    X = X.reset_index(drop=True)
+    y = pd.Series(y).reset_index(drop=True)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
+
+    fold_importances = []
+    for fold, (train_idx, _) in enumerate(cv.split(X, y), start=1):
+        X_fold, y_fold = X.iloc[train_idx], y.iloc[train_idx]
+        X_fold = _fit_frame(frame_pipeline, X_fold, y_fold)
+
+        X_numeric = X_fold.select_dtypes(include=[np.number]).replace([np.inf, -np.inf], np.nan)
+        X_numeric = X_numeric.fillna(X_numeric.median())
+        to_drop = find_high_correlation_features(X_numeric, y_fold, threshold=correlation_threshold)
+        X_numeric = X_numeric.drop(columns=to_drop)
+        if X_numeric.empty:
+            raise ValueError("Không còn biến numeric để tính feature importance.")
+
+        model = LogisticRegression(max_iter=1000, random_state=random_state)
+        model.fit(StandardScaler().fit_transform(X_numeric), y_fold)
+        fold_importances.append(pd.Series(np.abs(model.coef_[0]), index=X_numeric.columns, name=fold))
+
+    importance_df = pd.DataFrame(fold_importances)
+    result = pd.DataFrame({
+        "feature": importance_df.columns,
+        "n_folds_selected": importance_df.notna().sum(axis=0).values,
+        "importance_mean": importance_df.mean(axis=0).values,
+        "importance_std": importance_df.std(axis=0).values,
+        "importance_min": importance_df.min(axis=0).values,
+        "importance_max": importance_df.max(axis=0).values,
+    })
+    return result.sort_values("importance_mean", ascending=False).reset_index(drop=True)

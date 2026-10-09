@@ -386,3 +386,39 @@ def test_train_imbalance_experiments_mlflow(tmp_path, dummy_train_df, monkeypatc
     # Không đăng ký model vào registry vì là thử nghiệm so sánh
     assert client.search_registered_models() == []
 
+
+
+def test_run_cv_on_fold_fit_callback(dummy_train_df):
+    """on_fold_fit được gọi một lần mỗi fold, sau khi pipeline đã fit."""
+    X, y = build_features(dummy_train_df)
+    calls = []
+    run_cv(
+        make_pipeline(LogisticRegression(max_iter=300)),
+        X,
+        y,
+        n_splits=3,
+        on_fold_fit=lambda fold, pipe: calls.append((fold, hasattr(pipe.named_steps["clf"], "coef_"))),
+    )
+    assert calls == [(1, True), (2, True), (3, True)]
+
+
+def test_train_scorecard_mlflow(tmp_path, dummy_train_df, monkeypatch):
+    """train_scorecard log run, bảng điểm và đăng ký logistic_scorecard@scorecard."""
+    from mlflow.tracking import MlflowClient
+
+    from src.train import train_scorecard
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setattr("src.train.load_split_data", lambda: (dummy_train_df, None, None))
+
+    summary = train_scorecard()
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    exp = client.get_experiment_by_name("credit_scoring")
+    run = client.search_runs([exp.experiment_id])[0]
+    assert run.info.run_name == "logistic_scorecard"
+    assert {"roc_auc_mean", "ks_mean", "n_scorecard_features"} <= set(run.data.metrics)
+    assert "scorecard_points.csv" in {a.path for a in client.list_artifacts(run.info.run_id)}
+    assert client.get_model_version_by_alias("logistic_scorecard", "scorecard") is not None
+    assert summary["roc_auc"][0] > 0.6

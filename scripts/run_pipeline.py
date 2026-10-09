@@ -7,6 +7,8 @@ Usage:
     python scripts/run_pipeline.py --include-sex      # Bản đối chiếu fairness (có SEX, không đăng ký model)
     python scripts/run_pipeline.py --mode woe    # Báo cáo WoE/IV trên Train
     python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
+    python scripts/run_pipeline.py --mode scorecard   # Logistic Scorecard (WoE): 5-fold CV + MLflow + bảng điểm
+    python scripts/run_pipeline.py --mode scorecard --feature-selection   # Thí nghiệm lọc IV + tương quan
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
 """
@@ -18,6 +20,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 # Đảm bảo đường dẫn gốc dự án luôn có trong sys.path khi chạy script trực tiếp
@@ -34,12 +37,20 @@ if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.enc
         pass
 
 from src.data_split import load_split_data
-from src.features import ENGINEERED_COLUMNS, build_features
+from src.features import (
+    ENGINEERED_COLUMNS,
+    build_features,
+    compute_feature_importance_stability,
+    compute_iv_stability,
+    find_high_correlation_features,
+)
 from src.pipelines import (
     AGE_MAX_BINS,
     AGE_MIN_BINS,
     SCORECARD_IV_THRESHOLD,
+    SCORECARD_CORRELATION_THRESHOLD,
     SCORECARD_N_BINS,
+    build_feature_frame_pipeline,
     build_scorecard_pipeline,
 )
 from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, SENSITIVE_COLUMNS
@@ -48,6 +59,7 @@ from src.train import (
     train_boosting_default,
     train_imbalance_experiments,
     train_rf_xgboost_default,
+    train_scorecard,
 )
 from src.tune import TUNABLE_MODELS, tune_best_models, tune_model
 
@@ -56,7 +68,8 @@ FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
 def run_woe_pipeline(write_freeze: bool = False):
     """Fit scorecard pipeline trên toàn bộ Train để báo cáo IV (chỉ dùng xem báo cáo,
-    đánh giá mô hình phải chạy CV với cùng pipeline)."""
+    đánh giá mô hình phải chạy CV với cùng pipeline), kèm báo cáo tương quan và độ ổn định
+    IV / feature importance qua 5 fold (Tuần 2 - T4)."""
     train_df, _, _ = load_split_data()
     X_train, y_train = build_features(train_df)
     print("Train:", X_train.shape)
@@ -70,8 +83,43 @@ def run_woe_pipeline(write_freeze: bool = False):
         mark = "*" if feature in woe.selected_features_ else " "
         print(f"  {mark} {feature}: {iv:.4f}")
 
+    write_feature_stability_reports(X_train, y_train)
+
     if write_freeze:
         write_feature_freeze(iv_sorted, woe.selected_features_)
+
+
+def write_feature_stability_reports(X_train, y_train):
+    """Tương quan cao (Spearman) và độ ổn định IV / importance qua 5 fold, tính trên bộ đặc trưng
+    feature freeze v1 (build_feature_frame_pipeline, fit lại trong từng fold)."""
+    reports_dir = PROJECT_ROOT / "reports"
+    frame = build_feature_frame_pipeline().fit_transform(X_train, y_train)
+    _, corr_details = find_high_correlation_features(
+        frame, y_train, threshold=SCORECARD_CORRELATION_THRESHOLD, return_details=True
+    )
+    corr_df = pd.DataFrame(
+        corr_details, columns=["feature", "iv", "reason", "correlated_with", "correlation"]
+    ).drop(columns="reason")
+    iv_stability = compute_iv_stability(X_train, y_train, frame_pipeline=build_feature_frame_pipeline())
+    importance = compute_feature_importance_stability(
+        X_train,
+        y_train,
+        correlation_threshold=SCORECARD_CORRELATION_THRESHOLD,
+        frame_pipeline=build_feature_frame_pipeline(),
+    )
+
+    print(f"\nHigh-correlation pairs (Spearman > {SCORECARD_CORRELATION_THRESHOLD}, drop lower IV):")
+    for row in corr_df.itertuples():
+        print(f"  - {row.feature} (~ {row.correlated_with}, rho={row.correlation:.3f})")
+
+    outputs = {
+        "correlation_drop.csv": corr_df,
+        "iv_stability.csv": iv_stability,
+        "feature_importance.csv": importance,
+    }
+    for name, df in outputs.items():
+        df.to_csv(reports_dir / name, index=False, float_format="%.6f")
+    print("\nWrote " +", ".join(f"reports/{name}" for name in outputs))
 
 
 def write_feature_freeze(iv_sorted, selected):
@@ -112,9 +160,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "tune"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe' or 'tune' (Optuna)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard' or 'tune' (Optuna)",
     )
     parser.add_argument(
         "--include-sex",
@@ -125,6 +173,11 @@ def main():
         "--freeze",
         action="store_true",
         help="(mode woe) Ghi danh sách đặc trưng chốt ra configs/feature_freeze_v1.yaml",
+    )
+    parser.add_argument(
+        "--feature-selection",
+        action="store_true",
+        help="(mode scorecard) Thêm bước lọc IV + tương quan trong từng fold (thí nghiệm, không đăng ký model)",
     )
     parser.add_argument(
         "--tune-model",
@@ -144,6 +197,8 @@ def main():
 
     if args.mode == "woe":
         run_woe_pipeline(write_freeze=args.freeze)
+    elif args.mode == "scorecard":
+        train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
     elif args.mode == "tune":
         if args.tune_model:
             tune_model(args.tune_model, monotone=args.monotone, max_trials=args.max_trials, timeout=args.timeout)

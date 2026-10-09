@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 
 from src.features import (
     create_utilization_features,
@@ -16,8 +17,11 @@ from src.features import (
     WoEIVTransformer,
     FeatureEngineeringTransformer,
     ENGINEERED_COLUMNS,
+    find_high_correlation_features,
+    compute_feature_importance_stability,
+    FeatureSelectionTransformer,
 )
-from src.pipelines import build_scorecard_pipeline
+from src.pipelines import build_feature_frame_pipeline, build_scorecard_pipeline
 
 # Test credit utilization features.
 def test_create_utilization_features():
@@ -311,7 +315,7 @@ def test_age_bins_cover_out_of_range_ages():
     assert result["AGE_BIN"].notna().all()
 
 
-def test_feature_engineering_transformer_adds_engineered_columns(raw_credit_df):
+def test_feature_engineering_transformer_adds_engineered_columns(raw_credit_df: DataFrame):
     from src.preprocessing import AbnormalCodeTransformer
 
     X = AbnormalCodeTransformer().transform(raw_credit_df)
@@ -325,7 +329,7 @@ def _split_xy(df):
     return df.drop(columns=["default.payment.next.month"]), df["default.payment.next.month"]
 
 
-def test_scorecard_pipeline_on_raw_columns(raw_credit_df):
+def test_scorecard_pipeline_on_raw_columns(raw_credit_df: DataFrame):
     """Scorecard chạy được trên đúng tên cột CSV gốc (PAY_0) và dùng cả đặc trưng T2."""
     X, y = _split_xy(raw_credit_df)
 
@@ -337,19 +341,64 @@ def test_scorecard_pipeline_on_raw_columns(raw_credit_df):
     assert "PAY_1" in woe.iv_values_
     assert "PAY_MEAN" in woe.iv_values_
 
-
-def test_scorecard_pipeline_drops_sex_and_id(raw_credit_df):
+def test_scorecard_pipeline_drops_sex_and_id(raw_credit_df: DataFrame):
     X, y = _split_xy(raw_credit_df)
 
-    woe = build_scorecard_pipeline().fit(X, y).named_steps["woe_iv"]
+    # Pipeline chính thức: loại cả SEX và ID
+    pipeline = build_scorecard_pipeline().fit(X, y)
+    woe = pipeline.named_steps["woe_iv"]
+
     assert "SEX" not in woe.iv_values_
     assert "ID" not in woe.iv_values_
 
-    woe_with_sex = build_scorecard_pipeline(drop_sensitive=False).fit(X, y).named_steps["woe_iv"]
+    # Pipeline fairness: giữ SEX nhưng vẫn loại ID
+    fairness_pipeline = build_scorecard_pipeline(
+        drop_sensitive=False
+    ).fit(X, y)
+    woe_with_sex = fairness_pipeline.named_steps["woe_iv"]
+
     assert "SEX" in woe_with_sex.iv_values_
+    assert "ID" not in woe_with_sex.iv_values_
 
+def test_feature_selection_enabled_for_both_fairness_modes(
+    raw_credit_df: DataFrame,
+):
+    X, y = _split_xy(raw_credit_df)
 
-def test_scorecard_pipeline_with_cv(raw_credit_df):
+    official = build_scorecard_pipeline(
+        drop_sensitive=True,
+        enable_feature_selection=True,
+    )
+    fairness = build_scorecard_pipeline(
+        drop_sensitive=False,
+        enable_feature_selection=True,
+    )
+
+    # Cả hai pipeline đều sử dụng cùng bước feature selection.
+    assert "feature_selection" in official.named_steps
+    assert "feature_selection" in fairness.named_steps
+
+    # Lấy các bước trước feature selection.
+    official_idx = [
+        name for name, _ in official.steps
+    ].index("feature_selection")
+
+    fairness_idx = [
+        name for name, _ in fairness.steps
+    ].index("feature_selection")
+
+    X_official = official[:official_idx].fit_transform(X, y)
+    X_fairness = fairness[:fairness_idx].fit_transform(X, y)
+
+    # ID bị loại ở cả hai pipeline.
+    assert "ID" not in X_official.columns
+    assert "ID" not in X_fairness.columns
+
+    # Chỉ pipeline fairness giữ SEX trước bước chọn đặc trưng.
+    assert "SEX" not in X_official.columns
+    assert "SEX" in X_fairness.columns
+
+def test_scorecard_pipeline_with_cv(raw_credit_df: DataFrame):
     from sklearn.model_selection import StratifiedKFold, cross_val_score
 
     X, y = _split_xy(raw_credit_df)
@@ -360,3 +409,228 @@ def test_scorecard_pipeline_with_cv(raw_credit_df):
     assert len(scores) == 5
     assert np.isfinite(scores).all()
 
+def test_find_high_correlation_features():
+    X = pd.DataFrame({
+        "feature_a": [1, 2, 3, 4, 5],
+        "feature_b": [2, 4, 6, 8, 10],
+        "feature_c": [5, 1, 4, 2, 3],
+    })
+
+    y = pd.Series([0, 0, 0, 1, 1])
+
+    result = find_high_correlation_features(
+        X,
+        y,
+        threshold=0.9,
+    )
+
+    # feature_a và feature_b tương quan hoàn hảo,
+    # nên phải loại đúng một trong hai.
+    assert ("feature_a" in result) ^ ("feature_b" in result)
+
+    # feature_c không tương quan cao với hai biến trên.
+    assert "feature_c" not in result
+
+def test_compute_feature_importance_stability():
+    from src.features import compute_feature_importance_stability
+
+    X = pd.DataFrame({
+        "feature_a": [0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
+                      0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+        "feature_b": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+                      11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    })
+
+    y = pd.Series([
+        0, 0, 0, 0, 1, 1, 1, 1, 0, 1,
+        0, 1, 0, 1, 0, 1, 0, 1, 0, 1,
+    ])
+
+    result = compute_feature_importance_stability(
+        X,
+        y,
+        n_splits=5,
+        random_state=42,
+    )
+
+    assert "feature" in result.columns
+    assert "importance_mean" in result.columns
+    assert "importance_std" in result.columns
+    assert "importance_min" in result.columns
+    assert "importance_max" in result.columns
+
+    assert set(result["feature"]) == {"feature_a", "feature_b"}
+    assert (result["importance_mean"] >= 0).all()
+    assert (result["importance_std"] >= 0).all()
+
+def test_feature_selection_transformer():
+    X = pd.DataFrame({
+        "feature_a": [1, 2, 3, 4, 5, 6, 7, 8],
+        "feature_b": [2, 4, 6, 8, 10, 12, 14, 16],
+        "feature_c": [0, 0, 0, 0, 1, 1, 1, 1],
+    })
+
+    y = pd.Series([0, 0, 0, 0, 1, 1, 1, 1])
+
+    transformer = FeatureSelectionTransformer(
+        iv_threshold=0.0,
+        correlation_threshold=0.9,
+    )
+
+    transformer.fit(X, y)
+
+    X_selected = transformer.transform(X)
+
+    assert hasattr(transformer, "iv_values_")
+    assert hasattr(transformer, "selected_features_")
+    assert X_selected.shape[0] == X.shape[0]
+    assert list(X_selected.columns) == transformer.selected_features_
+
+def test_compute_iv_stability():
+    from src.features import compute_iv_stability
+
+    X = pd.DataFrame({
+        "strong_feature": [0] * 50 + [1] * 50,
+        "weak_feature": [
+            0, 1
+        ] * 50,
+    })
+
+    y = pd.Series([0] * 50 + [1] * 50)
+
+    result = compute_iv_stability(
+        X,
+        y,
+        n_splits=5,
+        random_state=42,
+    )
+
+    assert not result.empty
+    assert {
+        "feature",
+        "iv_mean",
+        "iv_std",
+        "iv_min",
+        "iv_max",
+    }.issubset(result.columns)
+
+    assert set(result["feature"]) == {
+        "strong_feature",
+        "weak_feature",
+    }
+
+    assert np.isfinite(
+        result[["iv_mean", "iv_std", "iv_min", "iv_max"]]
+    ).all().all()
+
+    assert (result["iv_std"] >= 0).all()
+    assert (result["iv_min"] <= result["iv_mean"]).all()
+    assert (result["iv_mean"] <= result["iv_max"]).all()
+
+def test_feature_selection_removes_low_iv_feature():
+    X = pd.DataFrame({
+        "strong_feature": [0] * 50 + [1] * 50,
+        "weak_feature": [0, 1] * 50,
+    })
+
+    y = pd.Series([0] * 50 + [1] * 50)
+
+    transformer = FeatureSelectionTransformer(
+        iv_threshold=0.02,
+        enable_correlation_filter=False,
+    )
+
+    transformer.fit(X, y)
+    result = transformer.transform(X)
+
+    assert "strong_feature" in result.columns
+    assert "weak_feature" not in result.columns
+    assert any(
+        item["feature"] == "weak_feature"
+        and item["reason"] == "IV thấp"
+        for item in transformer.dropped_features_
+)
+
+def test_find_high_correlation_features_keeps_higher_iv():
+    X = pd.DataFrame({
+        "feature_a": [0] * 50 + [1] * 50,
+        "feature_b": [0] * 50 + [1] * 50,
+        "feature_c": [0, 1] * 50,
+    })
+
+    y = pd.Series([0] * 50 + [1] * 50)
+
+    dropped = find_high_correlation_features(
+        X,
+        y,
+        threshold=0.9,
+    )
+
+    # Hai biến tương quan hoàn hảo nên chỉ giữ một biến.
+    assert ("feature_a" in dropped) ^ ("feature_b" in dropped)
+
+    # Biến không tương quan cao không bị loại vì tương quan.
+    assert "feature_c" not in dropped
+
+def test_feature_selection_on_raw_credit_data(raw_credit_df: DataFrame):
+    X, y = _split_xy(raw_credit_df)
+
+    pipeline = build_scorecard_pipeline(
+        drop_sensitive=True,
+        enable_feature_selection=True,
+    )
+
+    pipeline.fit(X, y)
+    predictions = pipeline.predict_proba(X)
+
+    assert predictions.shape == (len(y), 2)
+    assert np.isfinite(predictions).all()
+
+    selected = pipeline.named_steps["feature_selection"]
+
+    assert "ID" not in selected.selected_features_
+    assert "SEX" not in selected.selected_features_
+
+def test_find_high_correlation_uses_spearman_against_outliers():
+    """Hai biến độc lập nhưng cùng có một giá trị cực lớn: Pearson ~1, Spearman thấp -> không loại."""
+    rng = np.random.default_rng(0)
+    a, b = rng.random(200), rng.random(200)
+    a[0], b[0] = 1e6, 1e6
+    X = pd.DataFrame({"ratio_a": a, "ratio_b": b})
+    y = pd.Series(rng.integers(0, 2, 200))
+
+    assert find_high_correlation_features(X, y, method="pearson") != []
+    assert find_high_correlation_features(X, y) == []
+
+
+def test_iv_stability_on_feature_frame(raw_credit_df: DataFrame):
+    """Độ ổn định IV phải tính trên bộ đặc trưng freeze v1 (có biến dẫn xuất, AGE_BIN), không phải cột gốc."""
+    from src.features import compute_iv_stability
+
+    X, y = _split_xy(raw_credit_df)
+    result = compute_iv_stability(X, y, n_splits=3, frame_pipeline=build_feature_frame_pipeline())
+
+    features = set(result["feature"])
+    assert {"PAY_MAX", "UTIL_MEAN", "AGE_BIN"} <= features
+    assert not {"AGE", "SEX", "ID", "PAY_0"} & features
+    assert (result["iv_min"] <= result["iv_max"]).all()
+
+
+def test_feature_importance_reports_folds_selected():
+    """Biến chỉ được chọn ở một phần các fold phải có n_folds_selected < n_splits, std không bị gán 0."""
+    rng = np.random.default_rng(1)
+    n = 300
+    signal = rng.normal(size=n)
+    X = pd.DataFrame({
+        "signal": signal,
+        "near_copy": signal + rng.normal(scale=0.05, size=n),
+        "noise": rng.normal(size=n),
+    })
+    y = pd.Series((signal + rng.normal(scale=1.0, size=n) > 0).astype(int))
+
+    result = compute_feature_importance_stability(X, y, n_splits=5, random_state=42).set_index("feature")
+
+    assert result["n_folds_selected"].max() == 5
+    assert result.loc[["signal", "near_copy"], "n_folds_selected"].sum() == 5
+    single = result[result["n_folds_selected"] == 1]
+    assert single["importance_std"].isna().all()
