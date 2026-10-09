@@ -80,6 +80,48 @@ def get_advanced_default_models(
     }
 
 
+def get_boosting_default_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
+    """Factory tạo dictionary mô hình LightGBM và CatBoost với tham số mặc định (Tuần 2 - T3: Member B)."""
+    from catboost import CatBoostClassifier
+    from lightgbm import LGBMClassifier
+
+    return {
+        "lightgbm_default": LGBMClassifier(
+            random_state=random_state,
+            n_jobs=-1,
+            verbose=-1,
+        ),
+        "catboost_default": CatBoostClassifier(
+            random_state=random_state,
+            verbose=0,
+            thread_count=-1,
+            allow_writing_files=False,
+        ),
+    }
+
+
+def get_imbalance_weighted_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
+    """Factory tạo dictionary mô hình LightGBM và CatBoost với class_weight / auto_class_weights (Tuần 2 - T3: Member B)."""
+    from catboost import CatBoostClassifier
+    from lightgbm import LGBMClassifier
+
+    return {
+        "lightgbm_balanced": LGBMClassifier(
+            random_state=random_state,
+            class_weight="balanced",
+            n_jobs=-1,
+            verbose=-1,
+        ),
+        "catboost_balanced": CatBoostClassifier(
+            random_state=random_state,
+            auto_class_weights="Balanced",
+            verbose=0,
+            thread_count=-1,
+            allow_writing_files=False,
+        ),
+    }
+
+
 def get_data_version_tags() -> Dict[str, str]:
     """Lấy checksum dataset hoặc hash splits.json để log vào MLflow."""
     tags: Dict[str, str] = {}
@@ -268,6 +310,8 @@ def _train_and_log(
     alias: str,
     task: str,
     include_sex: bool = False,
+    sampler: Optional[BaseEstimator] = None,
+    register_model: bool = True,
 ) -> None:
     """Chạy 5-fold CV, log MLflow và đăng ký model."""
 
@@ -320,6 +364,9 @@ def _train_and_log(
             mlflow.log_param("n_splits", N_SPLITS)
             mlflow.log_param("n_input_columns", X.shape[1])
             mlflow.log_params(clone(estimator).get_params())
+            if sampler is not None:
+                mlflow.log_param("sampler", sampler.__class__.__name__)
+                mlflow.log_params({f"sampler_{k}": v for k, v in clone(sampler).get_params().items()})
 
             for metric, (mean, std) in summary.items():
                 mlflow.log_metric(f"{metric}_mean", mean)
@@ -339,6 +386,11 @@ def _train_and_log(
                 "train_size": len(X),
                 "default_rate": round(float(y.mean()), 4),
                 "feature_strategy": "feature_freeze_v1",
+                "imbalance_strategy": (
+                    "smote"
+                    if sampler is not None
+                    else ("class_weight" if "balanced" in model_name else "none")
+                ),
                 "include_sex": include_sex,
                 "random_state": random_state,
                 "target_col": target_col,

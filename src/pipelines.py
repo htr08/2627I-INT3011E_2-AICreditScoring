@@ -3,6 +3,9 @@
 Tách riêng module này để tránh import vòng giữa preprocessing.py và features.py.
 """
 
+from typing import Optional
+
+from imblearn.pipeline import Pipeline as ImbPipeline
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
@@ -26,7 +29,11 @@ AGE_MIN_BINS = 3
 AGE_MAX_BINS = 8
 
 
-def make_pipeline(estimator, include_sex: bool = False) -> Pipeline:
+def make_pipeline(
+    estimator,
+    include_sex: bool = False,
+    sampler: Optional[object] = None,
+) -> Pipeline:
     """Pipeline mô hình (feature freeze v1): tiền xử lý của preprocessing.py -> estimator.
 
     Nhận cột gốc của CSV (có PAY_0). Mọi bước có học tham số chỉ fit trên dữ liệu train
@@ -35,11 +42,21 @@ def make_pipeline(estimator, include_sex: bool = False) -> Pipeline:
     Args:
         estimator: Scikit-learn estimator (LogisticRegression, DecisionTreeClassifier, …).
         include_sex: False cho mô hình chính thức; True để đối chiếu fairness (Charter mục 1.3).
+        sampler: Đối tượng sampler (như SMOTE). Nếu được truyền, Pipeline từ imblearn sẽ được dùng
+                 để chỉ resample dữ liệu huấn luyện trong từng fold khi fit, không ảnh hưởng fold val.
     """
-    return Pipeline([
-        ("preprocess", build_preprocessing_pipeline(drop_sensitive=not include_sex)),
+    prep = build_preprocessing_pipeline(drop_sensitive=not include_sex)
+    if sampler is None:
+        return Pipeline([
+            ("preprocess", prep),
+            ("clf", estimator),
+        ])
+
+    steps = list(prep.steps) + [
+        ("sampler", sampler),
         ("clf", estimator),
-    ])
+    ]
+    return ImbPipeline(steps)
 
 def build_scorecard_pipeline(
     drop_sensitive: bool = True,

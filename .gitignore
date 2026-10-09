@@ -48,6 +48,7 @@ models/*
 # Experiment tracking
 mlruns/
 mlartifacts/
+catboost_info/
 *.db
 *.db-journal
 *.sqlite
