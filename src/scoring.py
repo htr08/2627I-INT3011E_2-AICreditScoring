@@ -38,6 +38,17 @@ def shap_to_points(shap_logit, pdo=PDO):
     return -np.asarray(shap_logit) * pdo / np.log(2)
 
 
+def _bin_order(item):
+    """Thứ tự hiển thị bin: khoảng theo cận dưới, giá trị số theo độ lớn, bin thiếu (NaN) cuối cùng."""
+    label = item[0]
+    if hasattr(label, "left"):
+        return (0, float(label.left), "")
+    try:
+        return (0, float(label), "")
+    except (TypeError, ValueError):
+        return (1, 0.0, str(label))
+
+
 def scorecard_points_table(pipeline, base_score=BASE_SCORE, base_odds=BASE_ODDS, pdo=PDO):
     """Bảng điểm của Logistic Scorecard (build_scorecard_pipeline đã fit) theo cùng thang PDO.
 
@@ -63,7 +74,7 @@ def scorecard_points_table(pipeline, base_score=BASE_SCORE, base_odds=BASE_ODDS,
         "points": float(base_points(model.intercept_[0], base_score, base_odds, pdo)),
     }]
     for feature in features:
-        for bin_label, woe_value in woe.woe_maps_[feature].items():
+        for bin_label, woe_value in sorted(woe.woe_maps_[feature].items(), key=_bin_order):
             rows.append({
                 "feature": feature,
                 "bin": str(bin_label),
