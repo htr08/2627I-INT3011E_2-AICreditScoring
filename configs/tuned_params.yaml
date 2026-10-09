@@ -1,0 +1,42 @@
+# Bộ tham số tốt nhất của các study Optuna (Tuần 2 – T4), chép từ tham số best_* của run cha
+# optuna_<study> trên MLflow. Dùng để huấn luyện lại mô hình đã tuning mà không chạy lại Optuna
+# (vd phiên bản có SEX ở Tuần 2 – T5). Chi tiết: reports/experiments_optuna_tuning.md mục 3.
+lightgbm:
+  model: lightgbm
+  monotone: false
+  cv_roc_auc: 0.789781
+  params:
+    n_estimators: 1450
+    learning_rate: 0.005004836841473496
+    num_leaves: 11
+    min_child_samples: 24
+    subsample: 0.5461241907870513
+    colsample_bytree: 0.7286100969715756
+    reg_alpha: 1.376271778223035e-07
+    reg_lambda: 8.162389562698112e-05
+
+lightgbm_monotone:
+  model: lightgbm
+  monotone: true
+  cv_roc_auc: 0.790631
+  params:
+    n_estimators: 1000
+    learning_rate: 0.007777559917183324
+    num_leaves: 10
+    min_child_samples: 12
+    subsample: 0.7370640101182702
+    colsample_bytree: 0.4983640827521146
+    reg_alpha: 0.0016438437374599448
+    reg_lambda: 8.873933824224165
+
+catboost:
+  model: catboost
+  monotone: false
+  cv_roc_auc: 0.791099
+  params:
+    iterations: 1100
+    learning_rate: 0.011058500546306235
+    depth: 6
+    l2_leaf_reg: 16.7613476745288
+    random_strength: 3.4752685500732023
+    subsample: 0.9969814418709121

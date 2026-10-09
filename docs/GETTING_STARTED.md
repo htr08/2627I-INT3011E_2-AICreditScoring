@@ -91,6 +91,7 @@ python scripts/run_pipeline.py --mode woe       # IV, tương quan, độ ổn �
 python scripts/run_pipeline.py --mode scorecard # Logistic Scorecard (WoE): CV + MLflow + bảng điểm
 python scripts/run_pipeline.py --mode tune      # Optuna: LightGBM (± monotonic), CatBoost (~1 giờ)
 python scripts/run_pipeline.py --mode tune --tune-model lightgbm --max-trials 5   # chạy thử nhanh
+python scripts/run_pipeline.py --mode tuned --include-sex  # Mô hình đã tuning có SEX, đối chiếu fairness (~5 phút)
 python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness (có SEX, không đăng ký model)
 ```
 *(hoặc `python -m src.train`)*

@@ -11,6 +11,7 @@ Usage:
     python scripts/run_pipeline.py --mode scorecard --feature-selection   # Thí nghiệm lọc IV + tương quan
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
+    python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
 """
 
 import argparse
@@ -61,7 +62,7 @@ from src.train import (
     train_rf_xgboost_default,
     train_scorecard,
 )
-from src.tune import TUNABLE_MODELS, tune_best_models, tune_model
+from src.tune import TUNABLE_MODELS, train_tuned, tune_best_models, tune_model
 
 FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
@@ -160,9 +161,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune", "tuned"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard' or 'tune' (Optuna)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'tune' (Optuna) or 'tuned' (huấn luyện lại mô hình đã tuning)",
     )
     parser.add_argument(
         "--include-sex",
@@ -199,6 +200,8 @@ def main():
         run_woe_pipeline(write_freeze=args.freeze)
     elif args.mode == "scorecard":
         train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
+    elif args.mode == "tuned":
+        train_tuned(include_sex=args.include_sex)
     elif args.mode == "tune":
         if args.tune_model:
             tune_model(args.tune_model, monotone=args.monotone, max_trials=args.max_trials, timeout=args.timeout)

@@ -135,3 +135,66 @@ def test_run_pipeline_cli_dispatch_tune(monkeypatch):
     )
     main()
     mock_tune.assert_called_once_with("catboost", monotone=True, max_trials=5, timeout=None)
+
+
+# 5. Tuần 2 – T5: mô hình đã tuning, phiên bản có SEX
+def test_tuned_params_config_matches_search_space():
+    """configs/tuned_params.yaml có đủ 2 ứng viên cuối, tham số khớp không gian tìm kiếm."""
+    from src.tune import FINAL_CANDIDATES, load_tuned_params
+
+    for study in FINAL_CANDIDATES:
+        tuned = load_tuned_params(study)
+        assert set(tuned["params"]) == set(DEFAULT_TRIAL_PARAMS[tuned["model"]])
+
+
+def test_prepare_folds_with_sex_same_splits():
+    """Bản có SEX dùng đúng cùng fold với bản không có SEX và thêm cột SEX one-hot."""
+    df = make_raw_credit_df(n=600, seed=42)
+    X0, y = build_features(df)
+    X1, _ = build_features(df, include_sex=True)
+    base = prepare_folds(X0, y, n_splits=3)
+    with_sex = prepare_folds(X1, y, n_splits=3, include_sex=True)
+    for a, b in zip(base, with_sex):
+        np.testing.assert_array_equal(a["y_val"], b["y_val"])
+        assert not any(n.startswith("categorical__SEX_") for n in a["feature_names"])
+        assert any(n.startswith("categorical__SEX_") for n in b["feature_names"])
+
+
+def test_train_tuned_with_sex_mlflow(tmp_path, monkeypatch):
+    """train_tuned(include_sex=True) log run _with_sex, chênh lệch theo fold, không đăng ký model."""
+    from mlflow.tracking import MlflowClient
+
+    from src.tune import train_tuned
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    df = make_raw_credit_df(n=500, seed=7)
+    monkeypatch.setattr("src.tune.load_split_data", lambda: (df, None, None))
+    monkeypatch.setattr(
+        "src.tune.load_tuned_params",
+        lambda study: {"model": "lightgbm", "monotone": True, "params": {"n_estimators": 30}},
+    )
+
+    results = train_tuned(studies=["lightgbm_monotone"], include_sex=True)
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    exp = client.get_experiment_by_name("credit_scoring")
+    run = client.search_runs([exp.experiment_id])[0]
+    assert run.info.run_name == "lightgbm_monotone_tuned_with_sex"
+    assert {"roc_auc_mean", "without_sex_roc_auc_mean", "sex_effect_roc_auc_mean", "sex_importance_share"} <= set(
+        run.data.metrics
+    )
+    assert run.data.tags["include_sex"] == "True"
+    assert client.search_registered_models() == []
+    assert len(results[0]["sex_effect_folds"]) == 5
+    assert 0.0 <= results[0]["sex_importance_share"] <= 1.0
+
+
+def test_run_pipeline_cli_dispatch_tuned_with_sex(monkeypatch):
+    from scripts.run_pipeline import main
+
+    mock_train = MagicMock()
+    monkeypatch.setattr("scripts.run_pipeline.train_tuned", mock_train)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "tuned", "--include-sex"])
+    main()
+    mock_train.assert_called_once_with(include_sex=True)
