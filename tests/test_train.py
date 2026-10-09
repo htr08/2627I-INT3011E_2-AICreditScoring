@@ -284,3 +284,105 @@ def test_train_baseline_with_sex_is_not_registered(tmp_path, dummy_train_df, mon
     }
     assert all(r.data.tags.get("include_sex") == "True" for r in runs)
     assert client.search_registered_models() == []
+
+
+def test_get_boosting_default_models():
+    """Kiểm tra get_boosting_default_models trả về đúng estimator LightGBM và CatBoost."""
+    from src.train import get_boosting_default_models
+
+    models = get_boosting_default_models(random_state=42)
+    assert "lightgbm_default" in models
+    assert "catboost_default" in models
+
+
+def test_get_imbalance_weighted_models():
+    """Kiểm tra get_imbalance_weighted_models trả về các estimator balanced."""
+    from src.train import get_imbalance_weighted_models
+
+    models = get_imbalance_weighted_models(random_state=42)
+    assert "lightgbm_balanced" in models
+    assert "catboost_balanced" in models
+
+
+def test_make_pipeline_with_sampler(dummy_train_df):
+    """Kiểm tra make_pipeline tích hợp sampler (SMOTE) bằng imblearn.pipeline.Pipeline."""
+    from imblearn.over_sampling import SMOTE
+    from sklearn.linear_model import LogisticRegression
+
+    X, y = build_features(dummy_train_df)
+    pipe = make_pipeline(
+        LogisticRegression(max_iter=300),
+        sampler=SMOTE(random_state=42),
+    )
+    assert "sampler" in pipe.named_steps
+    pipe.fit(X, y)
+    probs = pipe.predict_proba(X)
+    assert probs.shape == (len(X), 2)
+
+
+def test_train_boosting_default_mlflow(tmp_path, dummy_train_df, monkeypatch):
+    """train_boosting_default chạy đủ 2 run (LightGBM, CatBoost), log metrics whitelist và alias 'default'."""
+    from mlflow.tracking import MlflowClient
+    from src.train import train_boosting_default
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setattr("src.train.load_split_data", lambda: (dummy_train_df, None, None))
+
+    train_boosting_default()
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name("credit_scoring")
+    assert experiment is not None
+
+    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    assert len(runs) == 2
+
+    run_names = {r.data.tags.get("mlflow.runName") for r in runs}
+    assert run_names == {"lightgbm_default", "catboost_default"}
+
+    for r in runs:
+        for metric in ("roc_auc_mean", "ks_mean", "gini_mean", "pr_auc_mean"):
+            assert metric in r.data.metrics
+            assert 0.0 <= r.data.metrics[metric] <= 1.0
+
+    for name in ("lightgbm_default", "catboost_default"):
+        model_version = client.get_model_version_by_alias(name, "default")
+        assert model_version is not None
+        assert "default" in model_version.aliases
+
+
+def test_train_imbalance_experiments_mlflow(tmp_path, dummy_train_df, monkeypatch):
+    """train_imbalance_experiments chạy 4 run (balanced và SMOTE), log đúng tags và không đăng ký model."""
+    from mlflow.tracking import MlflowClient
+    from src.train import train_imbalance_experiments
+
+    tracking_uri = tmp_path.as_uri()
+    monkeypatch.setenv("MLFLOW_TRACKING_URI", tracking_uri)
+    monkeypatch.setattr("src.train.load_split_data", lambda: (dummy_train_df, None, None))
+
+    train_imbalance_experiments()
+
+    client = MlflowClient(tracking_uri=tracking_uri)
+    experiment = client.get_experiment_by_name("credit_scoring")
+    assert experiment is not None
+
+    runs = client.search_runs(experiment_ids=[experiment.experiment_id])
+    assert len(runs) == 4
+
+    run_names = {r.data.tags.get("mlflow.runName") for r in runs}
+    assert run_names == {
+        "lightgbm_balanced",
+        "catboost_balanced",
+        "lightgbm_smote",
+        "catboost_smote",
+    }
+
+    for r in runs:
+        for metric in ("roc_auc_mean", "ks_mean", "gini_mean", "pr_auc_mean"):
+            assert metric in r.data.metrics
+        assert "imbalance_strategy" in r.data.tags
+
+    # Không đăng ký model vào registry vì là thử nghiệm so sánh
+    assert client.search_registered_models() == []
+

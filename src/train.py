@@ -72,6 +72,48 @@ def get_advanced_default_models(random_state: int = 42) -> Dict[str, BaseEstimat
     }
 
 
+def get_boosting_default_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
+    """Factory tạo dictionary mô hình LightGBM và CatBoost với tham số mặc định (Tuần 2 - T3: Member B)."""
+    from catboost import CatBoostClassifier
+    from lightgbm import LGBMClassifier
+
+    return {
+        "lightgbm_default": LGBMClassifier(
+            random_state=random_state,
+            n_jobs=-1,
+            verbose=-1,
+        ),
+        "catboost_default": CatBoostClassifier(
+            random_state=random_state,
+            verbose=0,
+            thread_count=-1,
+            allow_writing_files=False,
+        ),
+    }
+
+
+def get_imbalance_weighted_models(random_state: int = 42) -> Dict[str, BaseEstimator]:
+    """Factory tạo dictionary mô hình LightGBM và CatBoost với class_weight / auto_class_weights (Tuần 2 - T3: Member B)."""
+    from catboost import CatBoostClassifier
+    from lightgbm import LGBMClassifier
+
+    return {
+        "lightgbm_balanced": LGBMClassifier(
+            random_state=random_state,
+            class_weight="balanced",
+            n_jobs=-1,
+            verbose=-1,
+        ),
+        "catboost_balanced": CatBoostClassifier(
+            random_state=random_state,
+            auto_class_weights="Balanced",
+            verbose=0,
+            thread_count=-1,
+            allow_writing_files=False,
+        ),
+    }
+
+
 def get_data_version_tags() -> Dict[str, str]:
     """Lấy checksum dataset hoặc hash splits.json để log vào tag MLflow."""
     tags: Dict[str, str] = {}
@@ -172,11 +214,15 @@ def _train_and_log(
     alias: str,
     task: str,
     include_sex: bool = False,
+    sampler: Optional[BaseEstimator] = None,
+    register_model: bool = True,
 ) -> None:
     """Chạy 5-fold CV cho từng model, log MLflow và đăng ký model với alias.
 
     include_sex=True: bản đối chiếu fairness (Charter mục 1.3) — run có hậu tố "_with_sex",
     chỉ log metrics & artifact, không đăng ký vào Model Registry.
+    sampler: Tuỳ chọn sampler imblearn (như SMOTE) được áp dụng trong từng fold.
+    register_model: Nếu False, chỉ log runs và metrics mà không đăng ký vào Model Registry.
     """
     cfg = load_config()
     random_state = cfg.get("random_state", 42)
@@ -194,7 +240,11 @@ def _train_and_log(
         run_name = f"{model_name}_with_sex" if include_sex else model_name
         logger.info("=== %s ===", run_name)
         # clone() đảm bảo estimator luôn ở trạng thái mới — tránh mutate instance
-        pipe = make_pipeline(clone(estimator), include_sex=include_sex)
+        pipe = make_pipeline(
+            clone(estimator),
+            include_sex=include_sex,
+            sampler=clone(sampler) if sampler is not None else None,
+        )
         fold_metrics = run_cv(pipe, X, y, n_splits=N_SPLITS, random_state=random_state)
 
         summary = summarize_folds(fold_metrics)
@@ -205,6 +255,9 @@ def _train_and_log(
             mlflow.log_param("n_splits", N_SPLITS)
             mlflow.log_param("n_input_columns", X.shape[1])
             mlflow.log_params(clone(estimator).get_params())
+            if sampler is not None:
+                mlflow.log_param("sampler", sampler.__class__.__name__)
+                mlflow.log_params({f"sampler_{k}": v for k, v in clone(sampler).get_params().items()})
 
             # 2. Metrics — mean & std (chỉ whitelist REPORT_METRICS)
             for metric, (mean, std) in summary.items():
@@ -223,6 +276,11 @@ def _train_and_log(
                 "train_size": len(X),
                 "default_rate": round(float(y.mean()), 4),
                 "feature_strategy": "feature_freeze_v1",
+                "imbalance_strategy": (
+                    "smote"
+                    if sampler is not None
+                    else ("class_weight" if "balanced" in model_name else "none")
+                ),
                 "include_sex": include_sex,
                 "random_state": random_state,
                 "target_col": target_col,
@@ -241,13 +299,14 @@ def _train_and_log(
             # 5. Model artifact — fit lại toàn bộ train set, thêm signature để MLflow biết input schema.
             pipe.fit(X, y)
             signature = infer_signature(X, pipe.predict_proba(X))
+            should_register = register_model and not include_sex
             model_info = mlflow.sklearn.log_model(
                 sk_model=pipe,
                 artifact_path="model",
                 signature=signature,
-                registered_model_name=None if include_sex else model_name,
+                registered_model_name=model_name if should_register else None,
             )
-            if not include_sex:
+            if should_register and alias:
                 MlflowClient().set_registered_model_alias(
                     name=model_name,
                     alias=alias,
@@ -291,3 +350,53 @@ def train_rf_xgboost_default(include_sex: bool = False) -> None:
         task="rf_xgboost_default_cv",
         include_sex=include_sex,
     )
+
+
+def train_boosting_default(include_sex: bool = False) -> None:
+    """Huấn luyện LightGBM và CatBoost với tham số mặc định (Tuần 2 - T3: Member B)."""
+    random_state = load_config().get("random_state", 42)
+    _train_and_log(
+        get_boosting_default_models(random_state=random_state),
+        alias="default",
+        task="boosting_default_cv",
+        include_sex=include_sex,
+        register_model=True,
+    )
+
+
+def train_imbalance_experiments(include_sex: bool = False) -> None:
+    """Thực hiện các thử nghiệm mất cân bằng: class_weight và SMOTE in-fold (Tuần 2 - T3: Member B).
+
+    1. Thử class_weight / auto_class_weights cho LightGBM và CatBoost.
+    2. Thí nghiệm phụ: SMOTE đặt bên trong từng fold bằng imblearn.pipeline.Pipeline,
+       không resample trước CV.
+    """
+    from imblearn.over_sampling import SMOTE
+
+    random_state = load_config().get("random_state", 42)
+
+    # 1. Thử nghiệm class_weight / auto_class_weights
+    logger.info("=== Bắt đầu thử nghiệm class_weight / auto_class_weights ===")
+    _train_and_log(
+        get_imbalance_weighted_models(random_state=random_state),
+        alias="balanced",
+        task="imbalance_class_weight_cv",
+        include_sex=include_sex,
+        register_model=False,
+    )
+
+    # 2. Thí nghiệm phụ: SMOTE đặt bên trong từng fold bằng imblearn.pipeline.Pipeline
+    logger.info("=== Bắt đầu thí nghiệm phụ: SMOTE trong từng fold ===")
+    smote_models = {
+        "lightgbm_smote": get_boosting_default_models(random_state=random_state)["lightgbm_default"],
+        "catboost_smote": get_boosting_default_models(random_state=random_state)["catboost_default"],
+    }
+    _train_and_log(
+        smote_models,
+        alias="smote",
+        task="imbalance_smote_cv",
+        include_sex=include_sex,
+        sampler=SMOTE(random_state=random_state),
+        register_model=False,
+    )
+

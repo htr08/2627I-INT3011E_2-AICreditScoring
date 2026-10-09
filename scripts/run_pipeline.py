@@ -23,6 +23,14 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Đảm bảo terminal console trên Windows không bị lỗi UnicodeEncodeError khi in tiếng Việt
+if hasattr(sys.stdout, "reconfigure") and sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
 from src.data_split import load_split_data
 from src.features import ENGINEERED_COLUMNS, build_features
 from src.pipelines import (
@@ -33,7 +41,12 @@ from src.pipelines import (
     build_scorecard_pipeline,
 )
 from src.preprocessing import CATEGORICAL_COLUMNS, NUMERIC_COLUMNS, SENSITIVE_COLUMNS
-from src.train import train_baseline, train_rf_xgboost_default
+from src.train import (
+    train_baseline,
+    train_boosting_default,
+    train_imbalance_experiments,
+    train_rf_xgboost_default,
+)
 
 FREEZE_PATH = PROJECT_ROOT / "configs" / "feature_freeze_v1.yaml"
 
@@ -96,9 +109,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "all", "woe"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'all' or 'woe'",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all' or 'woe'",
     )
     parser.add_argument(
         "--include-sex",
@@ -125,6 +138,10 @@ def main():
             train_baseline(include_sex=args.include_sex)
         if args.mode in ("advanced", "all"):
             train_rf_xgboost_default(include_sex=args.include_sex)
+        if args.mode in ("boosting", "all"):
+            train_boosting_default(include_sex=args.include_sex)
+        if args.mode in ("imbalance", "all"):
+            train_imbalance_experiments(include_sex=args.include_sex)
 
 
 if __name__ == "__main__":

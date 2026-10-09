@@ -84,7 +84,9 @@ Kết quả phân chia cố định (`random_state=42`):
 ```bash
 python scripts/run_pipeline.py                  # baseline: LR & DT
 python scripts/run_pipeline.py --mode advanced  # RF & XGBoost (tham số mặc định)
-python scripts/run_pipeline.py --mode all       # cả hai
+python scripts/run_pipeline.py --mode boosting  # LightGBM & CatBoost (tham số mặc định)
+python scripts/run_pipeline.py --mode imbalance # Thử nghiệm class_weight và SMOTE in-fold
+python scripts/run_pipeline.py --mode all       # Toàn bộ các mô hình trên
 python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness (có SEX, không đăng ký model)
 ```
 *(hoặc `python -m src.train`)*
