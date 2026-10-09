@@ -69,8 +69,20 @@ def test_rejects_non_linear_pipeline(train):
 @pytest.mark.parametrize(
     ("column", "group"),
     [("PAY_1", DELINQUENCY), ("PAY_SLOPE", DELINQUENCY), ("PAY_AMT3", REPAYMENT), ("PAY_RATIO_2", REPAYMENT),
-     ("MIN_PAY_FLAG_COUNT", REPAYMENT), ("BILL_AMT1", UTILIZATION), ("UTIL_MEAN", UTILIZATION),
+     ("MIN_PAY_FLAG_COUNT", REPAYMENT), ("BILL_AMT1", BILL_VOLATILITY), ("UTIL_MEAN", UTILIZATION),
      ("LIMIT_BAL", UTILIZATION), ("BILL_STD", BILL_VOLATILITY), ("AGE", DEMOGRAPHICS), ("AGE_BIN", DEMOGRAPHICS)],
 )
 def test_feature_group(column, group):
     assert feature_group(column) == group
+
+
+def test_feature_group_matches_config():
+    """Nhóm của demo trùng với feature_groups trong configs/config.yaml cho mọi biến của feature freeze v1."""
+    from src.explain import load_feature_groups, model_variables_from_freeze, variable_to_group
+
+    groups = load_feature_groups()
+    labels = {key: spec["label"] for key, spec in groups.items()}
+    var_to_group = variable_to_group(groups)
+    for var in model_variables_from_freeze():
+        assert feature_group(var) == labels[var_to_group[var]]
+    assert set(FEATURE_GROUPS) == set(labels.values())

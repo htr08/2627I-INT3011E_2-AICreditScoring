@@ -8,13 +8,17 @@ Mô hình dùng trong app cung cấp:
 
 from dataclasses import dataclass
 
-# Nhóm đặc trưng dùng cho reason codes (project_plan.md, mục 3e).
-DELINQUENCY = "Lịch sử trễ hạn"
-UTILIZATION = "Mức sử dụng hạn mức"
-REPAYMENT = "Hành vi trả nợ"
-BILL_VOLATILITY = "Biến động dư nợ"
-DEMOGRAPHICS = "Nhân khẩu học"
-FEATURE_GROUPS = [DELINQUENCY, UTILIZATION, REPAYMENT, BILL_VOLATILITY, DEMOGRAPHICS]
+from src.explain import load_feature_groups
+
+# Nhóm đặc trưng dùng cho reason codes (project_plan.md mục 3.5e), đọc từ configs/config.yaml
+# (khóa feature_groups) để demo và phân tích SHAP dùng chung một định nghĩa.
+_GROUPS = load_feature_groups()
+DELINQUENCY = _GROUPS["lich_su_tre_han"]["label"]
+UTILIZATION = _GROUPS["muc_su_dung_han_muc"]["label"]
+REPAYMENT = _GROUPS["hanh_vi_tra_no"]["label"]
+BILL_VOLATILITY = _GROUPS["bien_dong_du_no"]["label"]
+DEMOGRAPHICS = _GROUPS["nhan_khau_hoc"]["label"]
+FEATURE_GROUPS = [spec["label"] for spec in _GROUPS.values()]
 
 
 @dataclass(frozen=True)

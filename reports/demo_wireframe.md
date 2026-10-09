@@ -36,7 +36,7 @@ streamlit run app/streamlit_app.py
 │                      │  Mức sử dụng HM      ▐██ −10.7     │  - Hành vi trả nợ: −6       │
 │                      │  Lịch sử trễ hạn  ██▌    +9.5      │ Yếu tố tích cực             │
 │                      │  Hành vi trả nợ      ▐█ −5.9       │  - Lịch sử trễ hạn: +10     │
-│                      │  ...                               │  - Biến động dư nợ: +1      │
+│                      │  ...                               │  - Dư nợ, biến động: +1     │
 │                      │  Điểm cuối       ███████ 517       │                             │
 │                      │                                                                  │
 │                      │  ▸ Chi tiết kỹ thuật (điểm nền + đóng góp, logit, dữ liệu vào)   │
@@ -69,7 +69,7 @@ App chỉ gọi `model.explain(record)`, với đối tượng `Explanation` (đ
 `app/baseline_model.py` nạp Pipeline `preprocess → LogisticRegression` (`src.pipelines.make_pipeline`, feature freeze v1) từ MLflow Model Registry (`models:/logreg_baseline@baseline`, do `scripts/run_pipeline.py` đăng ký). Bước `preprocess` gồm làm sạch mã (EDUCATION, MARRIAGE, PAY_0 → PAY_1), đặc trưng T2, binning `AGE` theo IV (`AGE_BIN`), bỏ `SEX`/`ID`, one-hot 9 biến phân loại và impute/scale 40 biến số. `load_model()` ưu tiên mô hình này; nếu không nạp được (registry trống, chưa train, thiếu dữ liệu Train), app dùng mock model và hiển thị lỗi ở sidebar. Biến môi trường `DEMO_MODEL=mock` buộc dùng mock model.
 
 - **Giải thích:** với mô hình tuyến tính, SHAP interventional trên thang logit tính chính xác bằng `phi_k = coef_k × (z_k − mean_k)`, với `z` là vector sau tiền xử lý và `mean_k` là trung bình trên tập Train (background); base value bằng trung bình logit trên Train. Kết quả trùng với `shap.LinearExplainer`, do đó adapter không phụ thuộc thư viện `shap`. PD do adapter tính khớp với `predict_proba` của pipeline. Background được tính khi nạp mô hình, do đó app yêu cầu `data/raw` và `data/splits`.
-- **Ánh xạ nhóm:** mỗi cột sau one-hot được quy về cột gốc rồi gán nhóm. `PAY_1..6`, `PAY_MEAN`, `PAY_MAX`, `PAY_SLOPE`, `PAY_LATE_*` → Lịch sử trễ hạn; `LIMIT_BAL`, `BILL_AMT*`, `UTIL_*` → Mức sử dụng hạn mức; `PAY_AMT*`, `PAY_RATIO_*`, `MIN_PAY_FLAG_*` → Hành vi trả nợ; `BILL_STD`, `BILL_DELTA` → Biến động dư nợ; `AGE_BIN`, `EDUCATION`, `MARRIAGE` → Nhân khẩu học.
+- **Ánh xạ nhóm:** mỗi cột sau one-hot được quy về cột gốc rồi gán nhóm theo `feature_groups` trong `configs/config.yaml` (định nghĩa chung với phân tích SHAP, `notebooks/03_shap_dependence.ipynb` mục 4). `PAY_1..6`, `PAY_MEAN`, `PAY_MAX`, `PAY_SLOPE`, `PAY_LATE_*` → Lịch sử trễ hạn; `LIMIT_BAL`, `UTIL_*` → Mức sử dụng hạn mức; `PAY_AMT*`, `PAY_RATIO_*`, `MIN_PAY_FLAG_*` → Hành vi trả nợ; `BILL_AMT*`, `BILL_STD`, `BILL_DELTA` → Dư nợ và biến động dư nợ; `AGE_BIN`, `EDUCATION`, `MARRIAGE` → Nhân khẩu học.
 - **Cột đầu vào:** form và mô hình dùng cùng tên cột (`PAY_1..6`); mô hình chính thức không dùng `SEX` (Charter mục 8) nên form không nhập biến này.
 - **Hiệu chuẩn:** PD của baseline chưa hiệu chuẩn trên tập Valid. Khi có mô hình cuối đã calibrate: với Platt scaling, SHAP (thang margin) cần nhân với hệ số `a` trước khi cộng theo nhóm; với Isotonic, tính cộng tính không còn đúng và cần ghi chú rõ trong app.
 
