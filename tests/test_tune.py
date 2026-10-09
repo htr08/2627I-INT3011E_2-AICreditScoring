@@ -198,3 +198,21 @@ def test_run_pipeline_cli_dispatch_tuned_with_sex(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "tuned", "--include-sex"])
     main()
     mock_train.assert_called_once_with(include_sex=True)
+
+
+def test_fit_tuned_pipeline_matches_config(monkeypatch):
+    """fit_tuned_pipeline dựng đúng estimator và ràng buộc đơn điệu từ tuned_params."""
+    from src.tune import fit_tuned_pipeline
+
+    monkeypatch.setattr(
+        "src.tune.load_tuned_params",
+        lambda study: {"model": "lightgbm", "monotone": True, "params": {"n_estimators": 20}},
+    )
+    X, y = build_features(make_raw_credit_df(n=400, seed=1))
+    pipe = fit_tuned_pipeline("lightgbm_monotone", X, y)
+
+    clf = pipe.named_steps["clf"]
+    names = list(pipe.named_steps["preprocess"].named_steps["preprocessor"].get_feature_names_out())
+    assert clf.n_estimators == 20
+    assert clf.monotone_constraints[names.index("numeric__PAY_MAX")] == 1
+    assert pipe.predict_proba(X).shape == (len(X), 2)
