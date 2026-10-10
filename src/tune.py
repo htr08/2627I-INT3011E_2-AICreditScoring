@@ -466,6 +466,26 @@ def load_tuned_params(study_name: str, path=TUNED_PARAMS_PATH) -> Dict[str, Any]
     return tuned[study_name]
 
 
+def fit_tuned_pipeline(study_name: str, X, y, include_sex: bool = False) -> Pipeline:
+    """Fit mô hình đã tuning của một study (configs/tuned_params.yaml) trên (X, y), không chạy Optuna.
+
+    Dùng cho phân tích sau tuning (vd SHAP Local, Tuần 2 – T5). Kết quả trùng với mô hình được log
+    bởi tune_model / train_tuned do cùng tham số, cùng random_state.
+    """
+    cfg = load_config()
+    tuned = load_tuned_params(study_name)
+    monotone_features = cfg["tuning"]["monotone_increasing"] if tuned["monotone"] else None
+    return _fit_final_pipeline(
+        tuned["model"],
+        tuned["params"],
+        X,
+        y,
+        monotone_features,
+        cfg.get("random_state", 42),
+        include_sex=include_sex,
+    )
+
+
 def sex_importance_share(pipe: Pipeline) -> float:
     """Tỷ trọng tầm quan trọng (gain / PredictionValuesChange) của các cột SEX trong mô hình đã fit."""
     names = list(pipe.named_steps["preprocess"].named_steps["preprocessor"].get_feature_names_out())
