@@ -1,9 +1,9 @@
 ﻿Mô hình,Nhóm,ROC-AUC (mean ± std),Gini,KS,PR-AUC,Brier Score,Recall@0.5,Precision@0.5,F1-Score,Thời gian,Ghi chú
-Logistic Regression (baseline),Baseline,0.7745 ± 0.0116,0.5490,0.4282,0.5362,0.1354,0.3235,0.6728,0.4369,~2.5s,Baseline chuẩn Tuần 1
-Decision Tree (max_depth=5),Baseline,0.7672 ± 0.0120,0.5345,0.4162,0.5284,0.1367,0.3541,0.6385,0.4555,~1.8s,Baseline cây quyết định
-Logistic Scorecard (WoE),Scorecard,0.7790 ± 0.0083,0.5580,0.4326,0.5432,0.1351,0.3340,0.6750,0.4470,~4.2s,Scorecard chuẩn mực (coarse classing + ràng buộc dấu)
-Random Forest (default),Tree Ensembles,0.7667 ± 0.0097,0.5333,0.4107,0.5301,0.1388,0.3644,0.6321,0.4624,~8.5s,Tree ensemble mặc định T2
-XGBoost (default),Tree Ensembles,0.7597 ± 0.0073,0.5195,0.4007,0.5218,0.1440,0.3601,0.6120,0.4531,~5.2s,XGBoost mặc định T2
+Logistic Regression (baseline),Baseline,0.7745 ± 0.0116,0.5490,0.4282,0.5470,0.1354,0.3619,0.6760,0.4714,~2.5s,Baseline chuẩn Tuần 1
+Decision Tree (max_depth=5),Baseline,0.7672 ± 0.0120,0.5345,0.4162,0.5242,0.1367,0.3531,0.6629,0.4595,~1.8s,Baseline cây quyết định
+Logistic Scorecard (WoE),Scorecard,0.7790 ± 0.0083,0.5580,0.4326,0.5432,0.1351,0.3744,0.6596,0.4777,~4.2s,Scorecard chuẩn mực (coarse classing + ràng buộc dấu)
+Random Forest (default),Tree Ensembles,0.7667 ± 0.0097,0.5333,0.4107,0.5319,0.1388,0.3870,0.6313,0.4797,~8.5s,Tree ensemble mặc định T2
+XGBoost (default),Tree Ensembles,0.7597 ± 0.0073,0.5195,0.4007,0.5258,0.1440,0.3669,0.6077,0.4575,~5.2s,XGBoost mặc định T2
 LightGBM (default),Gradient Boosting (T3),0.7813 ± 0.0064,0.5626,0.4276,0.5512,0.1350,0.3767,0.6677,0.4816,~3.5s,Boosting mặc định T3
 CatBoost (default),Gradient Boosting (T3),0.7853 ± 0.0077,0.5706,0.4359,0.5584,0.1342,0.3784,0.6696,0.4836,~28.0s,"Boosting mặc định T3, AUC cao nhất mốc default"
 LightGBM Balanced (class_weight),Imbalance Experiments,0.7809 ± 0.0081,0.5617,0.4278,0.5505,0.1682,0.6110,0.4758,0.5350,~3.8s,Recall cao nhưng Brier tăng mạnh

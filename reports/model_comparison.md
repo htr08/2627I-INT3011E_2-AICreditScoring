@@ -22,21 +22,24 @@ Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bản
 
 | Mô hình | AUC CV (mean ± std) | AUC Test (95% CI) | Gini | KS | PR-AUC | Brier (thô) | Thời gian train | Khả năng giải thích |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | 0.7745 ± 0.0116 | Dành cho Tuần 3 – T3 | 0.5490 | 0.4282 | 0.5362 | 0.1354 | ~2.5s | Rất cao (hệ số odds ratio trực tiếp) |
-| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Dành cho Tuần 3 – T3 | 0.5345 | 0.4162 | 0.5284 | 0.1367 | ~1.8s | Cao (cây quyết định if-then rõ ràng) |
+| Logistic Regression (baseline) | 0.7745 ± 0.0116 | Dành cho Tuần 3 – T3 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | ~2.5s | Rất cao (hệ số odds ratio trực tiếp) |
+| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Dành cho Tuần 3 – T3 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | ~1.8s | Cao (cây quyết định if-then rõ ràng) |
 | Logistic Scorecard (WoE) | 0.7790 ± 0.0083 | Dành cho Tuần 3 – T3 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | ~4.2s | Rất cao (bảng điểm PDO, chuẩn ngân hàng) |
-| Random Forest (default) | 0.7667 ± 0.0097 | Dành cho Tuần 3 – T3 | 0.5333 | 0.4107 | 0.5301 | 0.1388 | ~8.5s | Trung bình (SHAP / Feature Importance) |
-| XGBoost (default) | 0.7597 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5195 | 0.4007 | 0.5218 | 0.1440 | ~5.2s | Trung bình (SHAP TreeExplainer) |
+| Random Forest (default) | 0.7667 ± 0.0097 | Dành cho Tuần 3 – T3 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | ~8.5s | Trung bình (SHAP / Feature Importance) |
+| XGBoost (default) | 0.7597 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | ~5.2s | Trung bình (SHAP TreeExplainer) |
 | LightGBM (default) | 0.7813 ± 0.0064 | Dành cho Tuần 3 – T3 | 0.5626 | 0.4276 | 0.5512 | 0.1350 | ~3.5s | Trung bình (SHAP TreeExplainer) |
 | CatBoost (default) | 0.7853 ± 0.0077 | Dành cho Tuần 3 – T3 | 0.5706 | 0.4359 | 0.5584 | 0.1342 | ~28.0s | Trung bình (SHAP TreeExplainer) |
 | LightGBM tuned + Monotonic | 0.7906 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | ~14.0s | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
 | CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | ~66.0s | Trung bình (SHAP TreeExplainer) |
 | MLP (tuỳ chọn) | Chưa triển khai (tùy chọn) | – | – | – | – | – | – | Thấp (KernelExplainer) |
 
-> **Ghi chú kỹ thuật:**
-> - Chỉ số CV đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng).
-> - Brier score ở bảng trên là Brier thô (chưa qua calibration). Brier sau hiệu chuẩn sẽ được cập nhật ở Tuần 3 sau bước Platt scaling trên tập Valid.
-> - Cột Test (ROC-AUC 95% CI, Gini Test, KS Test...) tuân thủ quy tắc đóng băng tập Test, chỉ thực hiện tại Tuần 3 – T3.
+> **Ghi chú kỹ thuật & Phương pháp tính:**
+> - **Chỉ số phân tách & xác suất:** Đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`).
+> - **Ngưỡng & cách tính chỉ số (Recall, Precision, F1):** Đo tại ngưỡng cố định `threshold = 0.5` độc lập trên từng fold kiểm định (validation fold), sau đó lấy trung bình (`mean`) và độ lệch chuẩn mẫu (`std`, `ddof=1`) qua 5 fold. Cách tính này khớp hoàn toàn với quy trình `run_cv` và `summarize_folds` log vào MLflow (không gộp chung toàn bộ OOF dự đoán trước khi tính).
+> - **Phương pháp đo thời gian train:** Cột 'Thời gian train' / 'Thời gian' phản ánh thời gian thực tế (wall-clock time) chạy toàn bộ quy trình 5-fold Stratified CV trên tập Train (18.000 dòng) trên môi trường CPU chuẩn (8 luồng). Đối chiếu với MLflow: trong MLflow, `elapsed_seconds` ghi nhận thời gian chạy của toàn bộ study Optuna (10.5–39.7 phút cho 34–37 trials) và `fit_seconds` ghi nhận thời gian huấn luyện 1 lần duy nhất trên toàn bộ tập Train (LightGBM ~45s, CatBoost ~249s cho phiên bản có biến SEX).
+> - **Thống nhất số liệu Boosting default:** Bảng chính và bảng kiểm định paired t-test thống nhất sử dụng số liệu từ pipeline chuẩn T3 (LightGBM default: 0.7813 ± 0.0064; CatBoost default: 0.7853 ± 0.0077). Các số 0.7805 và 0.7844 trong báo cáo T4 là bản tính lại trên fold-cache của buổi Optuna search (lệch ≤ 0.001 do cache đặc thù của Optuna).
+> - **Brier score:** Brier score ở bảng trên là Brier thô (chưa qua calibration). Brier sau hiệu chuẩn sẽ được cập nhật ở Tuần 3 sau bước Platt scaling trên tập Valid.
+> - **Đóng băng tập Test:** Cột Test (ROC-AUC 95% CI, Gini Test, KS Test...) tuân thủ quy tắc đóng băng tập Test, chỉ thực hiện duy nhất 1 lần tại Tuần 3 – T3.
 
 ---
 
@@ -46,11 +49,11 @@ Tổng hợp toàn bộ 17 cấu hình mô hình và kỹ thuật đã thử ngh
 
 | Mô hình | Nhóm | ROC-AUC (mean ± std) | Gini | KS | PR-AUC | Brier Score | Recall@0.5 | Precision@0.5 | F1-Score | Thời gian | Ghi chú |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | Baseline | 0.7745 ± 0.0116 | 0.5490 | 0.4282 | 0.5362 | 0.1354 | 0.3235 | 0.6728 | 0.4369 | ~2.5s | Baseline chuẩn Tuần 1 |
-| Decision Tree (max_depth=5) | Baseline | 0.7672 ± 0.0120 | 0.5345 | 0.4162 | 0.5284 | 0.1367 | 0.3541 | 0.6385 | 0.4555 | ~1.8s | Baseline cây quyết định |
-| Logistic Scorecard (WoE) | Scorecard | 0.7790 ± 0.0083 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | 0.3340 | 0.6750 | 0.4470 | ~4.2s | Scorecard chuẩn mực (coarse classing + ràng buộc dấu) |
-| Random Forest (default) | Tree Ensembles | 0.7667 ± 0.0097 | 0.5333 | 0.4107 | 0.5301 | 0.1388 | 0.3644 | 0.6321 | 0.4624 | ~8.5s | Tree ensemble mặc định T2 |
-| XGBoost (default) | Tree Ensembles | 0.7597 ± 0.0073 | 0.5195 | 0.4007 | 0.5218 | 0.1440 | 0.3601 | 0.6120 | 0.4531 | ~5.2s | XGBoost mặc định T2 |
+| Logistic Regression (baseline) | Baseline | 0.7745 ± 0.0116 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | 0.3619 | 0.6760 | 0.4714 | ~2.5s | Baseline chuẩn Tuần 1 |
+| Decision Tree (max_depth=5) | Baseline | 0.7672 ± 0.0120 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | 0.3531 | 0.6629 | 0.4595 | ~1.8s | Baseline cây quyết định |
+| Logistic Scorecard (WoE) | Scorecard | 0.7790 ± 0.0083 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | 0.3744 | 0.6596 | 0.4777 | ~4.2s | Scorecard chuẩn mực (coarse classing + ràng buộc dấu) |
+| Random Forest (default) | Tree Ensembles | 0.7667 ± 0.0097 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | 0.3870 | 0.6313 | 0.4797 | ~8.5s | Tree ensemble mặc định T2 |
+| XGBoost (default) | Tree Ensembles | 0.7597 ± 0.0073 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | 0.3669 | 0.6077 | 0.4575 | ~5.2s | XGBoost mặc định T2 |
 | LightGBM (default) | Gradient Boosting (T3) | 0.7813 ± 0.0064 | 0.5626 | 0.4276 | 0.5512 | 0.1350 | 0.3767 | 0.6677 | 0.4816 | ~3.5s | Boosting mặc định T3 |
 | CatBoost (default) | Gradient Boosting (T3) | 0.7853 ± 0.0077 | 0.5706 | 0.4359 | 0.5584 | 0.1342 | 0.3784 | 0.6696 | 0.4836 | ~28.0s | Boosting mặc định T3, AUC cao nhất mốc default |
 | LightGBM Balanced (class_weight) | Imbalance Experiments | 0.7809 ± 0.0081 | 0.5617 | 0.4278 | 0.5505 | 0.1682 | 0.6110 | 0.4758 | 0.5350 | ~3.8s | Recall cao nhưng Brier tăng mạnh |
@@ -76,15 +79,20 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | CatBoost tuned vs Logistic baseline | +0.0145 | +0.0091 | +0.0196 | +0.0236 | +0.0162 | +0.0166 | 0.0055 | [+0.0098, +0.0234] | 6.810 | 0.00243 | Có ý nghĩa (***) |
 | LightGBM monotonic vs Logistic baseline | +0.0144 | +0.0077 | +0.0185 | +0.0244 | +0.0157 | +0.0161 | 0.0061 | [+0.0086, +0.0237] | 5.928 | 0.00406 | Có ý nghĩa (***) |
-| CatBoost default vs Logistic baseline | +0.0076 | +0.0021 | +0.0125 | +0.0176 | +0.0098 | +0.0099 | 0.0057 | [+0.0028, +0.0171] | 3.859 | 0.01817 | Có ý nghĩa (*) |
-| LightGBM default vs Logistic baseline | +0.0023 | -0.0013 | +0.0090 | +0.0134 | +0.0062 | +0.0059 | 0.0057 | [-0.0012, +0.0130] | 2.315 | 0.08155 | Không |
+| CatBoost default vs Logistic baseline | +0.0077 | +0.0034 | +0.0125 | +0.0207 | +0.0098 | +0.0108 | 0.0064 | [+0.0028, +0.0188] | 3.753 | 0.01990 | Có ý nghĩa (*) |
+| LightGBM default vs Logistic baseline | +0.0020 | -0.0031 | +0.0097 | +0.0138 | +0.0116 | +0.0068 | 0.0071 | [-0.0020, +0.0156] | 2.142 | 0.09883 | Không |
+| Logistic Scorecard vs Logistic baseline | -0.0022 | -0.0051 | +0.0040 | +0.0191 | +0.0068 | +0.0045 | 0.0094 | [-0.0072, +0.0162] | 1.072 | 0.34420 | Không |
 | CatBoost tuned vs LightGBM monotonic | +0.0001 | +0.0015 | +0.0011 | -0.0008 | +0.0004 | +0.0005 | 0.0009 | [-0.0007, +0.0016] | 1.148 | 0.31501 | Không |
 
 ### Nhận xét kiểm định thống kê:
 - **Cả CatBoost tuned và LightGBM tuned + monotonic đều vượt trội hơn hẳn Baseline trên 100% các fold (5/5 fold dương):**
   - `CatBoost tuned`: Chênh lệch AUC trung bình **+0.0166** (dao động từ +0.0091 đến +0.0236), $t = 6.810$, $p = 0.00243 < 0.01$.
   - `LightGBM monotonic`: Chênh lệch AUC trung bình **+0.0161** (dao động từ +0.0077 đến +0.0244), $t = 5.928$, $p = 0.00406 < 0.01$.
-- **Sự khác biệt giữa CatBoost tuned và LightGBM monotonic là không đáng kể ($p = 0.505$):** Chênh lệch giữa hai mô hình chỉ là $+0.0005$ AUC trung bình và đảo dấu ở Fold 4 (-0.0008). Về mặt năng lực phân tách, hai mô hình này tương đương nhau.
+- **Cả hai mô hình Boosting mặc định (T3) đều cải thiện AUC so với Baseline LR:**
+  - `CatBoost default`: Chênh lệch AUC trung bình **+0.0108** (dao động từ +0.0034 đến +0.0207), $t = 3.753$, $p = 0.01990 < 0.05$ (có ý nghĩa thống kê).
+  - `LightGBM default`: Chênh lệch AUC trung bình **+0.0068** (dao động từ -0.0031 đến +0.0138), $t = 2.142$, $p = 0.09883 > 0.05$ (chưa đạt ý nghĩa thống kê ở mức 5% trên 5 fold).
+- **Scorecard WoE không vượt baseline có ý nghĩa thống kê:** Chênh lệch $+0.0045$ AUC trung bình có $t = 1.072$, $p = 0.34420 \approx 0.34 > 0.05$; khoảng tin cậy 95% $[-0.0072, +0.0162]$ chứa 0; và trên thực tế có 2/5 fold Scorecard có AUC thấp hơn Baseline LR.
+- **Sự khác biệt giữa CatBoost tuned và LightGBM monotonic là không có ý nghĩa thống kê ($p = 0.31501 \approx 0.31 > 0.05$):** Chênh lệch giữa hai mô hình chỉ là $+0.0005$ AUC trung bình (95% CI $[-0.0007, +0.0016]$ chứa 0) và đảo dấu ở Fold 4 (-0.0008). Về mặt năng lực phân tách, hai mô hình này tương đương nhau.
 
 ---
 
@@ -94,7 +102,7 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
 
 | Mô hình | ROC-AUC (Sàn 0.78 / Mục tiêu 0.79) | Gini (Sàn 0.57 / Mục tiêu 0.59) | KS (Sàn 0.45 / Mục tiêu 0.47) | PR-AUC (Sàn 0.56 / Mục tiêu 0.58) |
 | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | Chưa đạt sàn (0.7745 < 0.78) | Chưa đạt sàn (0.5490 < 0.57) | Chưa đạt sàn (0.4282 < 0.45) | Chưa đạt sàn (0.5362 < 0.56) |
+| Logistic Regression (baseline) | Chưa đạt sàn (0.7745 < 0.78) | Chưa đạt sàn (0.5490 < 0.57) | Chưa đạt sàn (0.4282 < 0.45) | Chưa đạt sàn (0.5470 < 0.56) |
 | Logistic Scorecard (WoE) | Chưa đạt sàn (0.7790 < 0.78) | Chưa đạt sàn (0.5580 < 0.57) | Chưa đạt sàn (0.4326 < 0.45) | Chưa đạt sàn (0.5432 < 0.56) |
 | LightGBM tuned + Monotonic | Đạt mục tiêu (0.7906 ≥ 0.79) | Đạt sàn (0.5813 ≥ 0.57) | Chưa đạt sàn (0.4453 < 0.45) | Đạt sàn (0.5624 ≥ 0.56) |
 | CatBoost tuned (Optuna) | Đạt mục tiêu (0.7911 ≥ 0.79) | Đạt sàn (0.5822 ≥ 0.57) | Chưa đạt sàn (0.4452 < 0.45) | Đạt sàn (0.5675 ≥ 0.56) |
@@ -105,7 +113,7 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
    - **ROC-AUC:** Cả CatBoost tuned (0.7911) và LightGBM monotonic (0.7906) đều **vượt mốc mục tiêu $\ge 0.79$**.
    - **Gini:** Đạt mốc sàn $\ge 0.57$ (CatBoost 0.5822, LightGBM 0.5813), tiệm cận mốc mục tiêu 0.59.
    - **PR-AUC:** Đạt mốc sàn $\ge 0.56$ (CatBoost 0.5675, LightGBM 0.5624).
-   - **KS:** Đạt ~0.445 (tiệm cận mốc sàn 0.45, thiếu khoảng 0.005). Theo kết luận tuning tại Tuần 2 – T4, đây là trần tự nhiên của bộ dữ liệu snapshot 2005.
+   - **KS:** **Chưa đạt mốc sàn** ($0.4452–0.4453$ so với mốc sàn 0.45, thiếu khoảng ~0.005; bảng đối chiếu KPI phân loại 'Chưa đạt sàn'). Theo kết luận tuning tại Tuần 2 – T4, đây là trần tự nhiên của bộ dữ liệu snapshot 2005 trên mô hình dự đoán xác suất không leak dữ liệu.
 
 3. **Kế hoạch Chi phí Kỳ vọng & Lựa chọn Ngưỡng Tối ưu (Kế hoạch Tuần 3 – T2):**
    - **Ma trận chi phí (Charter mục 1.3):** Chi phí $FN \approx 0.45 \times EAD$ (với giả định $LGD = 0.45$), chi phí $FP \approx 0.05 \times EAD$ (tỷ lệ $FN:FP = 9:1$, kèm phân tích độ nhạy $3:1$ đến $10:1$).
@@ -119,8 +127,8 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
 ### 6.1. Nhóm Baseline & Scorecard Truyền thống
 - **Logistic Regression baseline (0.7745 ± 0.0116):** Hoạt động ổn định, độ phân tách khá, thời gian train tức thì (~2.5s). Là mốc chuẩn tin cậy.
 - **Logistic Scorecard WoE (0.7790 ± 0.0083):**
-  - Vượt baseline Logistic thông thường (+0.0045 AUC), độ lệch chuẩn thấp hơn (0.0083 vs 0.0116).
-  - Nhờ coarse classing và ràng buộc dấu, toàn bộ hệ số và điểm số hoàn toàn tuân thủ logic nghiệp vụ ngân hàng (không bị đảo điểm phi lý).
+  - Về mặt số học, AUC trung bình cao hơn baseline Logistic thông thường một lượng nhỏ (+0.0045 AUC, 0.7790 vs 0.7745), tuy nhiên **chênh lệch này không có ý nghĩa thống kê** ($t = 1.072, p = 0.344 > 0.05$; khoảng tin cậy 95% $[-0.0072, +0.0162]$ chứa giá trị 0; và trên thực tế có 2/5 fold Scorecard thấp hơn LR).
+  - Ưu thế cốt lõi của Scorecard không nằm ở việc vượt trội về năng lực phân tách, mà nằm ở **tính minh bạch và chuẩn mực quản trị rủi ro ngân hàng**: Nhờ coarse classing và ràng buộc dấu, toàn bộ hệ số và điểm số hoàn toàn tuân thủ logic nghiệp vụ ngân hàng (không bị đảo điểm phi lý).
   - Điểm số PDO tính toán trực tiếp từ bảng điểm thuộc tính, minh bạch 100%. Là chuẩn mực so sánh tuyệt vời cho các mô hình học máy phức tạp.
 
 ### 6.2. Nhóm Tree Ensembles Mặc định (RF & XGBoost)

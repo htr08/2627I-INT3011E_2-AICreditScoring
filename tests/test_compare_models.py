@@ -57,6 +57,17 @@ def test_build_full_comparison_df():
     assert "Recall@0.5" in df.columns
     assert "Precision@0.5" in df.columns
 
+    # Kiểm tra metric cập nhật chuẩn MLflow của LR và Scorecard
+    lr_row = df[df["Mô hình"] == "Logistic Regression (baseline)"].iloc[0]
+    assert lr_row["PR-AUC"] == "0.5470"
+    assert lr_row["Recall@0.5"] == "0.3619"
+    assert lr_row["F1-Score"] == "0.4714"
+
+    sc_row = df[df["Mô hình"] == "Logistic Scorecard (WoE)"].iloc[0]
+    assert sc_row["Recall@0.5"] == "0.3744"
+    assert sc_row["Precision@0.5"] == "0.6596"
+    assert sc_row["F1-Score"] == "0.4777"
+
 
 def test_compute_statistical_tests():
     """Kiểm tra tính toán kiểm định t-test cặp đôi trên các fold."""
@@ -77,6 +88,11 @@ def test_compute_statistical_tests():
     lgb_row = df[df["So sánh cặp"] == "LightGBM monotonic vs Logistic baseline"].iloc[0]
     assert float(lgb_row["p-value (paired)"]) < 0.01
     assert "+0." in lgb_row["95% CI (Δ AUC)"]
+
+    # Scorecard vs baseline phải không có ý nghĩa thống kê (p > 0.05)
+    sc_row = df[df["So sánh cặp"] == "Logistic Scorecard vs Logistic baseline"].iloc[0]
+    assert float(sc_row["p-value (paired)"]) > 0.05
+    assert sc_row["Ý nghĩa (p < 0.05)"] == "Không"
 
 
 def test_check_charter_kpis():
