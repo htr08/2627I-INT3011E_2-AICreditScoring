@@ -380,6 +380,19 @@ def build_summary_table_df() -> pd.DataFrame:
                 "Khả năng giải thích": item["interpretability"],
             })
 
+    # Dòng cho MLP tuỳ chọn theo đúng mẫu Section 5 project_plan.md
+    rows.append({
+        "Mô hình": "MLP (tuỳ chọn)",
+        "AUC CV (mean ± std)": "Chưa triển khai (tùy chọn)",
+        "AUC Test (95% CI)": "–",
+        "Gini": "–",
+        "KS": "–",
+        "PR-AUC": "–",
+        "Brier (thô)": "–",
+        "Thời gian train": "–",
+        "Khả năng giải thích": "Thấp (KernelExplainer)",
+    })
+
     return pd.DataFrame(rows)
 
 
@@ -405,13 +418,17 @@ def build_full_comparison_df() -> pd.DataFrame:
 
 
 def compute_statistical_tests() -> pd.DataFrame:
-    """Tính kiểm định t-test cặp đôi trên các fold so với baseline."""
+    """Tính kiểm định t-test cặp đôi và 95% CI trên các fold so với baseline."""
     rows = []
     for comp_name, diffs in PAIRED_FOLD_DIFFS.items():
         s = pd.Series(diffs)
         mean_diff = s.mean()
         std_diff = s.std(ddof=1)
         t_stat, p_val = stats.ttest_1samp(diffs, 0)
+        se = stats.sem(diffs)
+        ci = stats.t.interval(0.95, df=len(diffs) - 1, loc=mean_diff, scale=se)
+        ci_str = f"[{ci[0]:+.4f}, {ci[1]:+.4f}]"
+
         rows.append({
             "So sánh cặp": comp_name,
             "Fold 1": f"{diffs[0]:+.4f}",
@@ -421,6 +438,7 @@ def compute_statistical_tests() -> pd.DataFrame:
             "Fold 5": f"{diffs[4]:+.4f}",
             "Δ AUC TB": f"{mean_diff:+.4f}",
             "Std Δ": f"{std_diff:.4f}",
+            "95% CI (Δ AUC)": ci_str,
             "t-statistic": f"{t_stat:.3f}",
             "p-value (paired)": f"{p_val:.5f}",
             "Ý nghĩa (p < 0.05)": "Có ý nghĩa (***)" if p_val < 0.01 else ("Có ý nghĩa (*)" if p_val < 0.05 else "Không"),
@@ -547,6 +565,11 @@ def generate_markdown_report() -> str:
     md.append(r"   - **Gini:** Đạt mốc sàn $\ge 0.57$ (CatBoost 0.5822, LightGBM 0.5813), tiệm cận mốc mục tiêu 0.59.")
     md.append(r"   - **PR-AUC:** Đạt mốc sàn $\ge 0.56$ (CatBoost 0.5675, LightGBM 0.5624).")
     md.append("   - **KS:** Đạt ~0.445 (tiệm cận mốc sàn 0.45, thiếu khoảng 0.005). Theo kết luận tuning tại Tuần 2 – T4, đây là trần tự nhiên của bộ dữ liệu snapshot 2005.")
+    md.append("")
+    md.append("3. **Kế hoạch Chi phí Kỳ vọng & Lựa chọn Ngưỡng Tối ưu (Kế hoạch Tuần 3 – T2):**")
+    md.append(r"   - **Ma trận chi phí (Charter mục 1.3):** Chi phí $FN \approx 0.45 \times EAD$ (với giả định $LGD = 0.45$), chi phí $FP \approx 0.05 \times EAD$ (tỷ lệ $FN:FP = 9:1$, kèm phân tích độ nhạy $3:1$ đến $10:1$).")
+    md.append("   - **Nguyên tắc chống rò rỉ (No Leakage / Overfitting):** Ngưỡng tối ưu không được chọn trên tập Train hay từng fold CV (tránh ước lượng chi phí lạc quan quá mức như phân tích tại PR #16 và `src/train.py`).")
+    md.append("   - **Lộ trình triển khai:** Ngưỡng tối ưu theo ma trận chi phí sẽ được fit đồng thời với Probability Calibration (Platt Scaling) trên tập Valid ở Tuần 3 – T2, và đo lường chi phí kỳ vọng độc lập trên tập Test ở Tuần 3 – T3.")
     md.append("")
     md.append("---")
     md.append("")

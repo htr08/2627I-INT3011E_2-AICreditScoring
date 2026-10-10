@@ -31,6 +31,7 @@ Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bản
 | CatBoost (default) | 0.7853 ± 0.0077 | Dành cho Tuần 3 – T3 | 0.5706 | 0.4359 | 0.5584 | 0.1342 | ~28.0s | Trung bình (SHAP TreeExplainer) |
 | LightGBM tuned + Monotonic | 0.7906 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | ~14.0s | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
 | CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | ~66.0s | Trung bình (SHAP TreeExplainer) |
+| MLP (tuỳ chọn) | Chưa triển khai (tùy chọn) | – | – | – | – | – | – | Thấp (KernelExplainer) |
 
 > **Ghi chú kỹ thuật:**
 > - Chỉ số CV đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng).
@@ -71,13 +72,13 @@ Vì tất cả các mô hình đều được huấn luyện trên cùng 5 fold 
 
 Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic Regression:
 
-| So sánh cặp | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Δ AUC TB | Std Δ | t-statistic | p-value (paired) | Ý nghĩa (p < 0.05) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CatBoost tuned vs Logistic baseline | +0.0145 | +0.0091 | +0.0196 | +0.0236 | +0.0162 | +0.0166 | 0.0055 | 6.810 | 0.00243 | Có ý nghĩa (***) |
-| LightGBM monotonic vs Logistic baseline | +0.0144 | +0.0077 | +0.0185 | +0.0244 | +0.0157 | +0.0161 | 0.0061 | 5.928 | 0.00406 | Có ý nghĩa (***) |
-| CatBoost default vs Logistic baseline | +0.0076 | +0.0021 | +0.0125 | +0.0176 | +0.0098 | +0.0099 | 0.0057 | 3.859 | 0.01817 | Có ý nghĩa (*) |
-| LightGBM default vs Logistic baseline | +0.0023 | -0.0013 | +0.0090 | +0.0134 | +0.0062 | +0.0059 | 0.0057 | 2.315 | 0.08155 | Không |
-| CatBoost tuned vs LightGBM monotonic | +0.0001 | +0.0015 | +0.0011 | -0.0008 | +0.0004 | +0.0005 | 0.0009 | 1.148 | 0.31501 | Không |
+| So sánh cặp | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Δ AUC TB | Std Δ | 95% CI (Δ AUC) | t-statistic | p-value (paired) | Ý nghĩa (p < 0.05) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| CatBoost tuned vs Logistic baseline | +0.0145 | +0.0091 | +0.0196 | +0.0236 | +0.0162 | +0.0166 | 0.0055 | [+0.0098, +0.0234] | 6.810 | 0.00243 | Có ý nghĩa (***) |
+| LightGBM monotonic vs Logistic baseline | +0.0144 | +0.0077 | +0.0185 | +0.0244 | +0.0157 | +0.0161 | 0.0061 | [+0.0086, +0.0237] | 5.928 | 0.00406 | Có ý nghĩa (***) |
+| CatBoost default vs Logistic baseline | +0.0076 | +0.0021 | +0.0125 | +0.0176 | +0.0098 | +0.0099 | 0.0057 | [+0.0028, +0.0171] | 3.859 | 0.01817 | Có ý nghĩa (*) |
+| LightGBM default vs Logistic baseline | +0.0023 | -0.0013 | +0.0090 | +0.0134 | +0.0062 | +0.0059 | 0.0057 | [-0.0012, +0.0130] | 2.315 | 0.08155 | Không |
+| CatBoost tuned vs LightGBM monotonic | +0.0001 | +0.0015 | +0.0011 | -0.0008 | +0.0004 | +0.0005 | 0.0009 | [-0.0007, +0.0016] | 1.148 | 0.31501 | Không |
 
 ### Nhận xét kiểm định thống kê:
 - **Cả CatBoost tuned và LightGBM tuned + monotonic đều vượt trội hơn hẳn Baseline trên 100% các fold (5/5 fold dương):**
@@ -105,6 +106,11 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
    - **Gini:** Đạt mốc sàn $\ge 0.57$ (CatBoost 0.5822, LightGBM 0.5813), tiệm cận mốc mục tiêu 0.59.
    - **PR-AUC:** Đạt mốc sàn $\ge 0.56$ (CatBoost 0.5675, LightGBM 0.5624).
    - **KS:** Đạt ~0.445 (tiệm cận mốc sàn 0.45, thiếu khoảng 0.005). Theo kết luận tuning tại Tuần 2 – T4, đây là trần tự nhiên của bộ dữ liệu snapshot 2005.
+
+3. **Kế hoạch Chi phí Kỳ vọng & Lựa chọn Ngưỡng Tối ưu (Kế hoạch Tuần 3 – T2):**
+   - **Ma trận chi phí (Charter mục 1.3):** Chi phí $FN \approx 0.45 \times EAD$ (với giả định $LGD = 0.45$), chi phí $FP \approx 0.05 \times EAD$ (tỷ lệ $FN:FP = 9:1$, kèm phân tích độ nhạy $3:1$ đến $10:1$).
+   - **Nguyên tắc chống rò rỉ (No Leakage / Overfitting):** Ngưỡng tối ưu không được chọn trên tập Train hay từng fold CV (tránh ước lượng chi phí lạc quan quá mức như phân tích tại PR #16 và `src/train.py`).
+   - **Lộ trình triển khai:** Ngưỡng tối ưu theo ma trận chi phí sẽ được fit đồng thời với Probability Calibration (Platt Scaling) trên tập Valid ở Tuần 3 – T2, và đo lường chi phí kỳ vọng độc lập trên tập Test ở Tuần 3 – T3.
 
 ---
 

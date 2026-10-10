@@ -35,7 +35,7 @@ def test_build_summary_table_df():
     ]
     assert list(df.columns) == expected_cols
 
-    # Kiểm tra có đủ các mô hình chủ chốt
+    # Kiểm tra có đủ các mô hình chủ chốt và dòng MLP tuỳ chọn theo Mục 5
     model_names = df["Mô hình"].tolist()
     assert any("Logistic Regression" in m for m in model_names)
     assert any("Logistic Scorecard" in m for m in model_names)
@@ -44,6 +44,7 @@ def test_build_summary_table_df():
     assert any("XGBoost" in m for m in model_names)
     assert any("LightGBM" in m for m in model_names)
     assert any("CatBoost" in m for m in model_names)
+    assert any("MLP" in m for m in model_names)
 
 
 def test_build_full_comparison_df():
@@ -65,14 +66,17 @@ def test_compute_statistical_tests():
     assert "So sánh cặp" in df.columns
     assert "p-value (paired)" in df.columns
     assert "t-statistic" in df.columns
+    assert "95% CI (Δ AUC)" in df.columns
 
-    # CatBoost tuned vs baseline phải có p < 0.01
+    # CatBoost tuned vs baseline phải có p < 0.01 và CI không chứa 0
     cb_row = df[df["So sánh cặp"] == "CatBoost tuned vs Logistic baseline"].iloc[0]
     assert float(cb_row["p-value (paired)"]) < 0.01
+    assert "+0." in cb_row["95% CI (Δ AUC)"]
 
-    # LightGBM monotonic vs baseline phải có p < 0.01
+    # LightGBM monotonic vs baseline phải có p < 0.01 và CI không chứa 0
     lgb_row = df[df["So sánh cặp"] == "LightGBM monotonic vs Logistic baseline"].iloc[0]
     assert float(lgb_row["p-value (paired)"]) < 0.01
+    assert "+0." in lgb_row["95% CI (Δ AUC)"]
 
 
 def test_check_charter_kpis():
