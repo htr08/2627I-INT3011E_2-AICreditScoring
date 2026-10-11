@@ -56,3 +56,17 @@ def test_aggregate_by_group_rejects_unknown_variable():
     by_var = aggregate_by_variable(np.zeros((2, 1)), ["FOO"], [])
     with pytest.raises(ValueError):
         aggregate_by_group(by_var, load_config()["feature_groups"])
+
+
+def test_reason_codes_split_by_direction_and_threshold():
+    """reason_codes: tối đa k nhóm mỗi chiều, sắp theo độ lớn, bỏ nhóm có |đóng góp| <= min_abs."""
+    import pandas as pd
+
+    from src.explain import reason_codes
+
+    contrib = pd.Series({"A": 0.8, "B": 0.3, "C": 0.04, "D": -0.5, "E": -0.2, "F": -0.01})
+    codes = reason_codes(contrib, k=2, min_abs=0.05)
+
+    assert list(codes["nhóm"]) == ["A", "B", "D", "E"]
+    assert list(codes["chiều"]) == ["Tăng rủi ro", "Tăng rủi ro", "Giảm rủi ro", "Giảm rủi ro"]
+    assert reason_codes(pd.Series({"A": -0.3}), k=2)["chiều"].tolist() == ["Giảm rủi ro"]

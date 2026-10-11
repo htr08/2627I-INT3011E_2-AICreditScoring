@@ -74,3 +74,18 @@ def aggregate_by_group(shap_by_var: pd.DataFrame, groups: Dict[str, dict]) -> pd
     labels = {key: spec["label"] for key, spec in groups.items()}
     by_group = shap_by_var.T.groupby(shap_by_var.columns.map(var_to_group)).sum().T
     return by_group.rename(columns=labels)
+
+
+def reason_codes(contributions: pd.Series, k: int = 3, min_abs: float = 0.0) -> pd.DataFrame:
+    """Reason codes của một khách hàng từ đóng góp SHAP theo nhóm (thang log-odds).
+
+    Trả về tối đa k nhóm làm tăng rủi ro nhiều nhất (đóng góp dương) và k nhóm làm giảm rủi ro nhiều
+    nhất (đóng góp âm), bỏ qua nhóm có |đóng góp| <= min_abs. Cột: nhóm, đóng góp, chiều.
+    """
+    rows = []
+    for direction, part in (
+        ("Tăng rủi ro", contributions[contributions > min_abs].sort_values(ascending=False)),
+        ("Giảm rủi ro", contributions[contributions < -min_abs].sort_values()),
+    ):
+        rows += [{"nhóm": name, "đóng góp": float(value), "chiều": direction} for name, value in part.head(k).items()]
+    return pd.DataFrame(rows, columns=["nhóm", "đóng góp", "chiều"])
