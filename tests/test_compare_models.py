@@ -68,6 +68,15 @@ def test_build_full_comparison_df():
     assert sc_row["Precision@0.5"] == "0.6596"
     assert sc_row["F1-Score"] == "0.4777"
 
+    # Kiểm tra metric đồng bộ của LightGBM default và CatBoost default
+    lgb_row = df[df["Mô hình"] == "LightGBM (default)"].iloc[0]
+    assert lgb_row["ROC-AUC (mean ± std)"] == "0.7805 ± 0.0077"
+    assert lgb_row["Gini"] == "0.5610"
+
+    cb_row = df[df["Mô hình"] == "CatBoost (default)"].iloc[0]
+    assert cb_row["ROC-AUC (mean ± std)"] == "0.7844 ± 0.0074"
+    assert cb_row["Gini"] == "0.5688"
+
 
 def test_compute_statistical_tests():
     """Kiểm tra tính toán kiểm định t-test cặp đôi trên các fold."""
@@ -88,6 +97,20 @@ def test_compute_statistical_tests():
     lgb_row = df[df["So sánh cặp"] == "LightGBM monotonic vs Logistic baseline"].iloc[0]
     assert float(lgb_row["p-value (paired)"]) < 0.01
     assert "+0." in lgb_row["95% CI (Δ AUC)"]
+
+    # CatBoost default vs baseline: p < 0.05, mean diff +0.0099
+    cb_def_row = df[df["So sánh cặp"] == "CatBoost default vs Logistic baseline"].iloc[0]
+    assert float(cb_def_row["p-value (paired)"]) < 0.05
+    assert cb_def_row["Fold 1"] == "+0.0077"
+    assert cb_def_row["Fold 2"] == "+0.0021"
+    assert cb_def_row["Δ AUC TB"] == "+0.0099"
+
+    # LightGBM default vs baseline: p > 0.05, mean diff +0.0060
+    lgb_def_row = df[df["So sánh cặp"] == "LightGBM default vs Logistic baseline"].iloc[0]
+    assert float(lgb_def_row["p-value (paired)"]) > 0.05
+    assert lgb_def_row["Fold 1"] == "+0.0005"
+    assert lgb_def_row["Fold 2"] == "-0.0007"
+    assert lgb_def_row["Δ AUC TB"] == "+0.0060"
 
     # Scorecard vs baseline phải không có ý nghĩa thống kê (p > 0.05)
     sc_row = df[df["So sánh cặp"] == "Logistic Scorecard vs Logistic baseline"].iloc[0]
