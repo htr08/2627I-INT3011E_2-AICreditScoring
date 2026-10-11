@@ -66,3 +66,13 @@ def test_run_pipeline_cli_dispatch_compare(monkeypatch):
     main()
     mock_compare.assert_called_once()
 
+
+def test_run_pipeline_cli_dispatch_calibrate(monkeypatch):
+    """--mode calibrate gọi run_calibration_experiments."""
+    mock_cal = MagicMock()
+    monkeypatch.setattr("src.calibrate.run_calibration_experiments", mock_cal)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "calibrate"])
+
+    main()
+    mock_cal.assert_called_once()
+
