@@ -9,6 +9,7 @@ Usage:
     python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
     python scripts/run_pipeline.py --mode scorecard   # Logistic Scorecard (WoE): 5-fold CV + MLflow + bảng điểm
     python scripts/run_pipeline.py --mode scorecard --feature-selection   # Thí nghiệm lọc IV + tương quan
+    python scripts/run_pipeline.py --mode compare     # So sánh Logistic Scorecard vs Black-box (XGBoost, LGBM, RF)
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
     python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
@@ -51,6 +52,7 @@ from src.pipelines import (
     SCORECARD_IV_THRESHOLD,
     SCORECARD_CORRELATION_THRESHOLD,
     SCORECARD_N_BINS,
+    build_blackbox_pipeline,
     build_feature_frame_pipeline,
     build_scorecard_pipeline,
 )
@@ -75,8 +77,6 @@ def run_woe_pipeline(write_freeze: bool = False):
     X_train, y_train = build_features(train_df)
     print("Train:", X_train.shape)
 
-    # IV theo cấu hình T3 (5 bin phân vị, mỗi giá trị rời rạc một bin) để khớp feature freeze v1;
-    # scorecard chính thức dùng coarse classing nên IV của nó khác bảng này.
     pipeline = build_scorecard_pipeline(coarse_classing=False).fit(X_train, y_train)
     woe = pipeline.named_steps["woe_iv"]
     iv_sorted = sorted(woe.iv_values_.items(), key=lambda x: x[1], reverse=True)
@@ -122,7 +122,7 @@ def write_feature_stability_reports(X_train, y_train):
     }
     for name, df in outputs.items():
         df.to_csv(reports_dir / name, index=False, float_format="%.6f")
-    print("\nWrote " +", ".join(f"reports/{name}" for name in outputs))
+    print("\nWrote " + ", ".join(f"reports/{name}" for name in outputs))
 
 
 def write_feature_freeze(iv_sorted, selected):
@@ -159,13 +159,84 @@ def write_feature_freeze(iv_sorted, selected):
     print(f"\nWrote {FREEZE_PATH.relative_to(PROJECT_ROOT)}")
 
 
+def run_compare_pipeline(include_sex: bool = False):
+    """Chạy 5-fold CV so sánh trực tiếp Logistic Scorecard (WoE) với các mô hình Black-box."""
+    import numpy as np
+    from sklearn.model_selection import StratifiedKFold
+    from src.scoring import evaluate_model_metrics
+
+    train_df, _, _ = load_split_data()
+    X_train, y_train = build_features(train_df)
+
+    models = {
+        "Logistic Scorecard (WoE)": build_scorecard_pipeline(drop_sensitive=not include_sex),
+        "XGBoost (Black-box)": build_blackbox_pipeline("xgboost", include_sex=include_sex),
+        "LightGBM (Black-box)": build_blackbox_pipeline("lightgbm", include_sex=include_sex),
+        "Random Forest (Black-box)": build_blackbox_pipeline("rf", include_sex=include_sex),
+    }
+
+    print("\n" + "=" * 65)
+    print("=== BẮT ĐẦU SO SÁNH LOGISTIC SCORECARD VS BLACK-BOX (5-FOLD CV) ===")
+    print("=" * 65)
+
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    final_results = []
+
+    for name, pipeline in models.items():
+        auc_list, gini_list, ks_list = [], [], []
+        print(f"\n---> Huấn luyện mô hình: {name}")
+
+        for fold, (train_idx, val_idx) in enumerate(skf.split(X_train, y_train), 1):
+            X_tr, y_tr = X_train.iloc[train_idx], y_train.iloc[train_idx]
+            X_va, y_va = X_train.iloc[val_idx], y_train.iloc[val_idx]
+
+            pipeline.fit(X_tr, y_tr)
+            y_prob = pipeline.predict_proba(X_va)[:, 1]
+
+            metrics = evaluate_model_metrics(y_va, y_prob)
+            auc_list.append(metrics["AUC"])
+            gini_list.append(metrics["Gini"])
+            ks_list.append(metrics["KS"])
+            print(f"  Fold {fold}: AUC={metrics['AUC']:.4f} | KS={metrics['KS']:.4f} | Gini={metrics['Gini']:.4f}")
+
+        final_results.append({
+            "Model": name,
+            "Mean AUC": round(float(np.mean(auc_list)), 4),
+            "Mean Gini": round(float(np.mean(gini_list)), 4),
+            "Mean KS": round(float(np.mean(ks_list)), 4),
+        })
+
+    df_res = pd.DataFrame(final_results)
+    print("\n" + "=" * 65)
+    print("=== KẾT QUẢ SO SÁNH TỔNG HỢP MÔ HÌNH ===")
+    print("=" * 65)
+    print(df_res.to_string(index=False))
+
+    # Lưu báo cáo vào thư mục reports/
+    reports_dir = PROJECT_ROOT / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_path = reports_dir / "scorecard_vs_blackbox_comparison.csv"
+    md_path = reports_dir / "scorecard_vs_blackbox_comparison.md"
+
+    df_res.to_csv(csv_path, index=False)
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("# Bảng So sánh Logistic Scorecard (WoE) vs Black-box Models\n\n")
+        try:
+            f.write(df_res.to_markdown(index=False))
+        except ImportError:
+            f.write(df_res.to_string(index=False))
+
+    print(f"\n[INFO] Đã xuất báo cáo tại:\n  - {csv_path.relative_to(PROJECT_ROOT)}\n  - {md_path.relative_to(PROJECT_ROOT)}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune", "tuned"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "tune", "tuned"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'tune' (Optuna) or 'tuned' (huấn luyện lại mô hình đã tuning)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced', 'boosting', 'imbalance', 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'tune' or 'tuned'",
     )
     parser.add_argument(
         "--include-sex",
@@ -202,6 +273,8 @@ def main():
         run_woe_pipeline(write_freeze=args.freeze)
     elif args.mode == "scorecard":
         train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
+    elif args.mode == "compare":
+        run_compare_pipeline(include_sex=args.include_sex)
     elif args.mode == "tuned":
         train_tuned(include_sex=args.include_sex)
     elif args.mode == "tune":
