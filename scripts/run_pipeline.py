@@ -12,6 +12,7 @@ Usage:
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
     python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
+    python scripts/run_pipeline.py --mode compare   # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
 """
 
 import argparse
@@ -163,9 +164,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune", "tuned"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune", "tuned", "compare", "calibrate"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'tune' (Optuna) or 'tuned' (huấn luyện lại mô hình đã tuning)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'tune' (Optuna), 'tuned' (huấn luyện lại mô hình đã tuning), 'compare' (bảng so sánh sơ bộ), or 'calibrate' (hiệu chuẩn & chọn ngưỡng chi phí)",
     )
     parser.add_argument(
         "--include-sex",
@@ -198,7 +199,11 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    if args.mode == "woe":
+    if args.mode == "compare":
+        from scripts.compare_models import main as compare_main
+
+        compare_main()
+    elif args.mode == "woe":
         run_woe_pipeline(write_freeze=args.freeze)
     elif args.mode == "scorecard":
         train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
@@ -209,6 +214,12 @@ def main():
             tune_model(args.tune_model, monotone=args.monotone, max_trials=args.max_trials, timeout=args.timeout)
         else:
             tune_best_models(max_trials=args.max_trials, timeout=args.timeout)
+    elif args.mode == "calibrate":
+        from src.calibrate import run_calibration_experiments
+
+        logging.info("Chạy quy trình hiệu chuẩn xác suất và phân tích ngưỡng chi phí (Tuần 3 - T2)...")
+        results = run_calibration_experiments()
+        logging.info("Hoàn tất hiệu chuẩn! Đã cập nhật kết quả và lưu biểu đồ vào reports/figures/.")
     else:
         if args.mode in ("baseline", "all"):
             train_baseline(include_sex=args.include_sex)
