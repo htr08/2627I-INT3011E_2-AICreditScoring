@@ -164,27 +164,6 @@ def export_scorecard_to_dict(scorecard_df: "pd.DataFrame") -> dict:
 
     return card
 
-def calculate_ks_statistic(y_true, y_prob) -> float:
-    """Tính chỉ số Kolmogorov-Smirnov (KS) statistic giữa 2 phân phối Good/Bad."""
-    import pandas as pd
-
-    df_eval = pd.DataFrame({"target": y_true, "prob": y_prob}).sort_values("prob", ascending=True)
-    df_eval["good"] = (df_eval["target"] == 0).astype(int)
-    df_eval["bad"] = (df_eval["target"] == 1).astype(int)
-
-    total_good = df_eval["good"].sum()
-    total_bad = df_eval["bad"].sum()
-
-    if total_good == 0 or total_bad == 0:
-        return 0.0
-
-    df_eval["cum_good"] = df_eval["good"].cumsum() / total_good
-    df_eval["cum_bad"] = df_eval["bad"].cumsum() / total_bad
-
-    ks_stat = float(np.max(np.abs(df_eval["cum_good"] - df_eval["cum_bad"])))
-    return ks_stat
-
-
 def evaluate_model_metrics(y_true, y_prob) -> dict:
     """Tính toán bộ 3 chỉ số đánh giá tiêu chuẩn tín dụng: AUC, Gini, KS."""
     from sklearn.metrics import roc_auc_score
