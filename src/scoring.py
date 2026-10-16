@@ -164,6 +164,7 @@ def export_scorecard_to_dict(scorecard_df: "pd.DataFrame") -> dict:
 
     return card
 
+
 def evaluate_model_metrics(y_true, y_prob) -> dict:
     """Tính toán bộ 3 chỉ số đánh giá tiêu chuẩn tín dụng: AUC, Gini, KS."""
     from sklearn.metrics import roc_auc_score
