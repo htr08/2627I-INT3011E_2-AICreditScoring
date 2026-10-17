@@ -55,3 +55,14 @@ def test_run_pipeline_cli_dispatch_scorecard(monkeypatch):
 
     main()
     mock_scorecard.assert_called_once_with(include_sex=False, enable_feature_selection=True)
+
+
+def test_run_pipeline_cli_dispatch_compare(monkeypatch):
+    """--mode compare gọi compare_models.main."""
+    mock_compare = MagicMock()
+    monkeypatch.setattr("scripts.compare_models.main", mock_compare)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "compare"])
+
+    main()
+    mock_compare.assert_called_once()
+
