@@ -46,13 +46,13 @@ Baseline Logistic Regression là run `logreg_baseline` (alias `baseline` trong M
 | Logistic Regression (`logreg_baseline`) | 0.7745 ± 0.0116 | 0.5490 ± 0.0233 | 0.4282 ± 0.0231 | 0.5470 ± 0.0179 | 0.1354 ± 0.0031 |
 | Decision Tree, max_depth=5 (`dt_baseline`) | 0.7672 ± 0.0120 | 0.5345 ± 0.0240 | 0.4162 ± 0.0184 | 0.5242 ± 0.0152 | 0.1367 ± 0.0031 |
 
-Tham khảo (không dùng để đặt mốc) — mô hình tham số mặc định cùng pipeline; Logistic Scorecard được đánh giá trên cùng bộ fold, hiện mới có ROC-AUC:
+Tham khảo (không dùng để đặt mốc) — mô hình tham số mặc định cùng pipeline; Logistic Scorecard được đánh giá trên cùng bộ fold:
 
 | Mô hình | ROC-AUC | Gini | KS | PR-AUC | Brier (chưa calib.) |
 |---|---|---|---|---|---|
 | Random Forest (`rf_default`) | 0.7667 ± 0.0097 | 0.5333 ± 0.0193 | 0.4107 ± 0.0240 | 0.5319 ± 0.0200 | 0.1388 ± 0.0035 |
 | XGBoost (`xgboost_default`) | 0.7597 ± 0.0073 | 0.5195 ± 0.0145 | 0.4007 ± 0.0160 | 0.5258 ± 0.0125 | 0.1440 ± 0.0031 |
-| Logistic Scorecard WoE (`build_scorecard_pipeline`) | 0.7809 | – | – | – | – |
+| Logistic Scorecard WoE (`build_scorecard_pipeline`) | 0.7790 ± 0.0083 | 0.5580 ± 0.0165 | 0.4326 ± 0.0224 | 0.5432 ± 0.0136 | 0.1351 ± 0.0029 |
 
 **Mốc tham chiếu** (đo trên tập Test):
 
@@ -69,14 +69,14 @@ Lý do điều chỉnh:
 
 - **Tiền xử lý và đặc trưng:** ROC-AUC của LR tăng từ 0.7278 lên 0.7745 (+0.0467) sau khi mã không tài liệu hóa được chuẩn hóa, PAY_*, EDUCATION, MARRIAGE được one-hot và đặc trưng T2 được bổ sung. Mốc sàn lần 1 (0.76) thấp hơn baseline mới nên không còn phân biệt được mô hình tốt với mô hình kém.
 - **Baseline mạnh nhất:** Thứ hạng đảo so với lần 1: LR (0.7745) vượt DT (0.7672), nên các mốc lấy từ LR. Random Forest (0.7667) và XGBoost (0.7597) tham số mặc định chưa vượt LR; khoảng cách đến mốc sàn thuộc phạm vi tuning (Tuần 2 – T4 trở đi).
-- **Logistic Scorecard (WoE):** ROC-AUC 0.7809, cao hơn baseline LR 0.0064 (khoảng 0.5 std CV) và xấp xỉ mốc sàn 0.78.
+- **Logistic Scorecard (WoE):** ROC-AUC 0.7790 (bản chính thức: ràng buộc dấu + coarse classing), cao hơn baseline LR 0.0045 (khoảng 0.4 std CV) và xấp xỉ mốc sàn 0.78.
 
 Lưu ý:
 
 - Mốc được suy ra từ CV trên Train nhưng áp dụng trên Test (chỉ chạy 1 lần ở Tuần 3). Chênh lệch CV–Test cỡ 1 std là bình thường, vì vậy luôn báo cáo kèm 95% CI bootstrap.
 - Mô hình chính thức không dùng SEX (mục 8). Bản đối chiếu fairness có SEX (run `*_with_sex`, không đăng ký vào Model Registry) đạt ROC-AUC LR 0.7749 và DT 0.7669, chênh không quá 0.0004 so với bản không SEX; SEX gần như không đóng góp vào khả năng phân biệt.
 - AGE được đưa vào mọi mô hình dưới dạng binning theo IV (AGE_BIN, 3–8 bin, fit lại trong từng fold) theo mục 8, thay cho AGE liên tục. So với AGE liên tục, ROC-AUC của LR giảm 0.0007 và của DT tăng 0.0007, đều trong phạm vi 0.1 std CV; các mốc tham chiếu không đổi.
-- Mốc mục tiêu ROC-AUC 0.79 cao hơn mọi mô hình đã đánh giá (cao nhất là Logistic Scorecard, 0.7809); khả năng đạt mốc phụ thuộc kết quả tuning.
+- Mốc mục tiêu ROC-AUC 0.79 cao hơn mọi mô hình đã đánh giá tại thời điểm điều chỉnh (cao nhất là Logistic Scorecard, 0.7790); khả năng đạt mốc phụ thuộc kết quả tuning. Sau tuning Tuần 2 – T4, LightGBM monotonic (0.7906) và CatBoost (0.7911) vượt mốc này trên CV.
 - KPI tham chiếu vẫn chỉ là mốc so sánh, không bắt buộc (xem mục 4).
 
 ## 4. Definition of Done (DoD)

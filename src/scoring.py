@@ -5,6 +5,7 @@ Tham số mặc định: 600 điểm tại odds 50:1, PDO = 20 (chưa đưa vào
 """
 
 import numpy as np
+import pandas as pd
 
 BASE_SCORE = 600
 BASE_ODDS = 50
@@ -83,3 +84,93 @@ def scorecard_points_table(pipeline, base_score=BASE_SCORE, base_odds=BASE_ODDS,
                 "points": float(-factor * coefs[feature] * woe_value),
             })
     return pd.DataFrame(rows)
+
+def calculate_ks_statistic(y_true, y_prob) -> float:
+    """Tính chỉ số Kolmogorov-Smirnov (KS) statistic giữa 2 phân phối Good/Bad."""
+    import pandas as pd
+
+    df_eval = pd.DataFrame({"target": y_true, "prob": y_prob}).sort_values("prob", ascending=True)
+    df_eval["good"] = (df_eval["target"] == 0).astype(int)
+    df_eval["bad"] = (df_eval["target"] == 1).astype(int)
+
+    total_good = df_eval["good"].sum()
+    total_bad = df_eval["bad"].sum()
+
+    if total_good == 0 or total_bad == 0:
+        return 0.0
+
+    df_eval["cum_good"] = df_eval["good"].cumsum() / total_good
+    df_eval["cum_bad"] = df_eval["bad"].cumsum() / total_bad
+
+    ks_stat = float(np.max(np.abs(df_eval["cum_good"] - df_eval["cum_bad"])))
+    return ks_stat
+
+
+def compare_models_performance(models_dict: dict, X_test, y_test) -> "pd.DataFrame":
+    """So sánh hiệu năng giữa Logistic Scorecard và các mô hình Black-box.
+
+    Args:
+        models_dict: Dictionary dạng {"Tên mô hình": pipeline_da_fit}.
+        X_test: Tập đặc trưng kiểm thử.
+        y_test: Nhãn thực tế (1: Bad, 0: Good).
+
+    Returns:
+        DataFrame tổng hợp các chỉ số AUC, Gini, KS.
+    """
+    import pandas as pd
+    from sklearn.metrics import roc_auc_score
+
+    results = []
+    for model_name, pipeline in models_dict.items():
+        if hasattr(pipeline, "predict_proba"):
+            y_prob = pipeline.predict_proba(X_test)[:, 1]
+        else:
+            continue
+
+        auc = float(roc_auc_score(y_test, y_prob))
+        gini = float(2 * auc - 1)
+        ks = calculate_ks_statistic(y_test, y_prob)
+
+        results.append({
+            "Model": model_name,
+            "AUC": round(auc, 4),
+            "Gini": round(gini, 4),
+            "KS": round(ks, 4),
+        })
+
+    return pd.DataFrame(results)
+
+
+def export_scorecard_to_dict(scorecard_df: "pd.DataFrame") -> dict:
+    """Chuyển scorecard_points_table thành dạng Dictionary tra cứu điểm nhanh.
+
+    Args:
+        scorecard_df: DataFrame trả về từ `scorecard_points_table()`.
+    """
+    card = {}
+    base_row = scorecard_df[scorecard_df["feature"] == "(base)"]
+    base_pt = float(base_row["points"].values[0]) if not base_row.empty else 0.0
+
+    card["base_points"] = base_pt
+    card["features"] = {}
+
+    for feature, group in scorecard_df[scorecard_df["feature"] != "(base)"].groupby("feature"):
+        card["features"][feature] = {}
+        for _, row in group.iterrows():
+            card["features"][feature][row["bin"]] = {
+                "woe": row["woe"],
+                "points": row["points"],
+            }
+
+    return card
+
+
+def evaluate_model_metrics(y_true, y_prob) -> dict:
+    """Tính toán bộ 3 chỉ số đánh giá tiêu chuẩn tín dụng: AUC, Gini, KS."""
+    from sklearn.metrics import roc_auc_score
+
+    auc = float(roc_auc_score(y_true, y_prob))
+    gini = float(2 * auc - 1)
+    ks = calculate_ks_statistic(y_true, y_prob)
+
+    return {"AUC": auc, "Gini": gini, "KS": ks}
