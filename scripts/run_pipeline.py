@@ -13,6 +13,7 @@ Usage:
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
     python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
+    python scripts/run_pipeline.py --mode summary     # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
 """
 
 import argparse
@@ -279,9 +280,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "tune", "tuned"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "summary", "tune", "tuned"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced', 'boosting', 'imbalance', 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'tune' or 'tuned'",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'summary' (bảng so sánh sơ bộ các mô hình), 'tune' (Optuna) or 'tuned' (huấn luyện lại mô hình đã tuning)",
     )
     parser.add_argument(
         "--include-sex",
@@ -320,6 +321,10 @@ def main():
         train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
     elif args.mode == "compare":
         run_compare_pipeline(include_sex=args.include_sex)
+    elif args.mode == "summary":
+        from scripts.compare_models import main as summary_main
+
+        summary_main()
     elif args.mode == "tuned":
         train_tuned(include_sex=args.include_sex)
     elif args.mode == "tune":
