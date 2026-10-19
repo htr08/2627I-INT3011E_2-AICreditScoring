@@ -210,7 +210,7 @@ Ngưỡng 0.11 gắn cờ **64,72%** hồ sơ trong kết quả in-sample, trong
    - Thêm phương thức `decision_function` cho `SignConstrainedLogisticRegression` trong `src/pipelines.py` bảo đảm tính tương thích đồng bộ.
    - Bổ sung cấu hình `calibration`, `cost_matrix`, `scoring` chuẩn hóa vào `configs/config.yaml`.
    - Xây dựng thành công notebook tương tác `notebooks/04_calibration_threshold.ipynb` tái hiện toàn bộ chu trình.
-   - Có bộ kiểm thử cho calibrator và CLI; cần chạy lại kiểm thử sau các thay đổi review.
+   - Có bộ kiểm thử cho calibrator, đánh giá OOF, lưu/nạp mô hình và CLI (`tests/test_calibrate.py`, `tests/test_run_pipeline.py`).
    - Tích hợp cờ `--mode calibrate` vào `scripts/run_pipeline.py`.
 2. **Quyết định Kỹ thuật then chốt:**
    - OOF chưa cho thấy Platt hoặc Isotonic cải thiện Brier so với xác suất thô. Nếu vẫn cần hiệu chuẩn để hỗ trợ diễn giải SHAP, Platt là phương án giữ được tính cộng tính nhưng phải chấp nhận rằng lợi ích PD chưa được chứng minh.
@@ -219,4 +219,4 @@ Ngưỡng 0.11 gắn cờ **64,72%** hồ sơ trong kết quả in-sample, trong
    - Mức giảm chi phí 48,66% và Recall 89,22% cũng là số in-sample; không diễn giải như hiệu quả ngoài mẫu.
 3. **Kế hoạch tiếp theo (Tuần 3 – T3):**
    - Chạy nghiệm thu cuối cùng trên tập Test (duy nhất 1 lần) để hoàn thiện bảng so sánh và báo cáo tổng kết.
-   - Bàn giao `CalibratedPipeline` và các ngưỡng phân tầng cho Thành viên C tích hợp vào giao diện demo Streamlit.
+   - Bàn giao `CalibratedPipeline` và các ngưỡng phân tầng cho Thành viên C tích hợp vào giao diện demo Streamlit. `--mode calibrate` lưu mô hình (ứng viên chính, Platt, ngưỡng tối ưu in-sample trên Valid) tại `models/final_model.pkl`; nạp bằng `src.calibrate.load_calibrated_pipeline`. Ngưỡng lưu kèm chưa phải ngưỡng cuối cùng của nhóm.
