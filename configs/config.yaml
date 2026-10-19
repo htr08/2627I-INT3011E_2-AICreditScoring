@@ -77,6 +77,11 @@ cost_matrix:
   lost_revenue_rate: 0.05
   fn_fp_ratios: [3.0, 5.0, 7.0, 9.0, 10.0]
 
+# Phân tầng rủi ro cho demo (reports/calibration_threshold.md mục 6.3). Ranh giới dưới là calibration.threshold
+# (ngưỡng vận hành đã khóa); ranh giới trên là ngưỡng tối ưu khi tỷ lệ chi phí FN:FP = 3:1.
+risk_tiers:
+  alert_threshold: 0.27
+
 # Quy đổi PD sang điểm tín dụng theo PDO (Project Charter mục 1.3 & project_plan.md mục 3.5d).
 # Base Score = 600 tại odds 50:1, PDO = 20, thang hiển thị [300, 850].
 scoring:

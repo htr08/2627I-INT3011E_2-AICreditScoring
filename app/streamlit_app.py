@@ -1,10 +1,10 @@
 """Demo Streamlit: nhập hồ sơ -> PD, điểm tín dụng, giải thích theo nhóm đặc trưng.
 
 Khởi chạy từ thư mục gốc repo: streamlit run app/streamlit_app.py
-Bố cục: reports/demo_wireframe.md. Mô hình mặc định là baseline Logistic Regression trong MLflow
-Model Registry (đăng ký bởi `python scripts/run_pipeline.py`), giải thích SHAP lấy background là tập Train
-(yêu cầu data/raw và data/splits); nếu không nạp được thì dùng mock model.
-Biến môi trường DEMO_MODEL=mock buộc app luôn dùng mock model.
+Bố cục: reports/demo_wireframe.md. Mô hình mặc định là mô hình cuối (LightGBM monotonic + Platt) lưu ở
+models/final_model.pkl (xuất bởi `python scripts/run_pipeline.py --mode final-model`), giải thích bằng
+shap.TreeExplainer. Nếu không nạp được thì dùng baseline Logistic Regression trong MLflow Model Registry, rồi mock model.
+Biến môi trường DEMO_MODEL = final | baseline | mock buộc app dùng đúng mô hình đó.
 """
 
 import os
@@ -19,8 +19,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.baseline_model import BaselineModel  # noqa: E402
+from app.explanation import MIN_REASON_POINTS  # noqa: E402
+from app.final_model import FinalModel  # noqa: E402
 from app.mock_model import MockModel  # noqa: E402
+from app.risk_tiers import ALERT, NORMAL, TIERS, WATCH, classify, load_thresholds  # noqa: E402
 from app.sample_profiles import PROFILES  # noqa: E402
+from app.validation import validate_record  # noqa: E402
 from src.scoring import BASE_ODDS, BASE_SCORE, PDO, SCORE_CLIP, base_points, pd_to_score, shap_to_points  # noqa: E402
 
 MONTH_LABELS = ["T9", "T8", "T7", "T6", "T5", "T4"]  # PAY_1/BILL_AMT1 = tháng 9/2005
@@ -34,7 +38,7 @@ PAY_OPTIONS = {
     9: "9: Trễ ≥ 9 tháng",
 }
 DEFAULT_PROFILE = "Ca biên"
-# Ngưỡng tạm thời; Tuần 3 thay bằng ngưỡng tối ưu theo ma trận chi phí.
+# Ngưỡng của baseline và mock model (không có ngưỡng đã khóa). Mô hình cuối dùng phân tầng cố định ở app/risk_tiers.py.
 DEFAULT_THRESHOLD = 0.30
 # Dải điểm thực tế với PDO 600/50:1/20 (research_shap_scorecard_pdo.md, mục 4.3).
 SCORE_DISPLAY_RANGE = (420, 640)
@@ -42,13 +46,22 @@ SCORE_DISPLAY_RANGE = (420, 640)
 
 @st.cache_resource
 def load_model():
-    """Trả về (model, lỗi khi nạp baseline hoặc None)."""
-    if os.environ.get("DEMO_MODEL") == "mock":
+    """Trả về (model, thông báo lỗi nạp hoặc None). Thứ tự ưu tiên: mô hình cuối, baseline, mock."""
+    choice = os.environ.get("DEMO_MODEL", "").lower()
+    if choice == "mock":
         return MockModel(), None
-    try:
-        return BaselineModel.from_registry(), None
-    except Exception as exc:  # registry trống, chưa train, sai cấu trúc pipeline...
-        return MockModel(), f"Không nạp được mô hình baseline: {exc}"
+    errors = []
+    if choice in ("", "final"):
+        try:
+            return FinalModel.from_file(), None
+        except Exception as exc:  # chưa có final_model.pkl, khác phiên bản thư viện, sai cấu trúc...
+            errors.append(f"Không nạp được mô hình cuối: {exc}")
+    if choice != "final":
+        try:
+            return BaselineModel.from_registry(), ("\n\n".join(errors) or None)
+        except Exception as exc:  # registry trống, chưa train, sai cấu trúc pipeline...
+            errors.append(f"Không nạp được mô hình baseline: {exc}")
+    return MockModel(), "\n\n".join(errors)
 
 
 def apply_profile(name: str) -> None:
@@ -110,8 +123,22 @@ def waterfall_chart(start: float, points: dict[str, float], end: float):
     return fig
 
 
+def current_record() -> dict:
+    return {k: st.session_state[k] for k in PROFILES[DEFAULT_PROFILE]}
+
+
+def render_tier(model, exp, threshold: float):
+    """Hiển thị mức cảnh báo; mô hình cuối có thêm hành động đề xuất theo phân tầng đã khóa."""
+    if getattr(model, "is_final", False):
+        watch, alert = load_thresholds()
+        tier = classify(exp.pd, watch, alert)
+        help_text = f"Theo dõi từ PD ≥ {watch:.0%}; cảnh báo cao từ PD ≥ {alert:.0%} (ngưỡng đã khóa)."
+        return tier.label, help_text, tier
+    return risk_band(exp.pd, threshold), f"Ngưỡng PD hiện tại: {threshold:.0%}", None
+
+
 def render_result(model, threshold: float) -> None:
-    record = {k: st.session_state[k] for k in PROFILES[DEFAULT_PROFILE]}
+    record = current_record()
     exp = model.explain(record)
     score = float(pd_to_score(exp.pd))
     points = {g: float(shap_to_points(v)) for g, v in exp.contributions.items()}
@@ -122,9 +149,13 @@ def render_result(model, threshold: float) -> None:
     m1, m2, m3 = st.columns(3)
     m1.metric("Xác suất vỡ nợ (PD)", f"{exp.pd:.1%}")
     m2.metric("Điểm tín dụng", f"{score:.0f}")
-    m3.metric("Mức cảnh báo", risk_band(exp.pd, threshold), help=f"Ngưỡng PD hiện tại: {threshold:.0%}")
+    label, help_text, tier = render_tier(model, exp, threshold)
+    m3.metric("Mức cảnh báo", label, help=help_text)
     lo, hi = SCORE_DISPLAY_RANGE
     st.progress(min(max((score - lo) / (hi - lo), 0.0), 1.0), text=f"Vị trí trên thang {lo}–{hi}")
+    if tier is not None:
+        show = {NORMAL.key: st.success, WATCH.key: st.warning, ALERT.key: st.error}[tier.key]
+        show(f"**Hành động đề xuất:** {tier.action}")
 
     left, right = st.columns([3, 2])
     with left:
@@ -134,15 +165,20 @@ def render_result(model, threshold: float) -> None:
         plt.close(fig)
     with right:
         st.markdown("**Lý do chính làm giảm điểm**")
-        negatives = sorted((v, g) for g, v in points.items() if v < 0)
+        negatives = sorted((v, g) for g, v in points.items() if v <= -MIN_REASON_POINTS)
         if negatives:
             for v, g in negatives[:3]:
                 st.markdown(f"- {g}: **{v:+.0f}** điểm")
         else:
             st.markdown("- Không có nhóm nào làm giảm điểm.")
         st.markdown("**Yếu tố tích cực**")
-        for v, g in sorted(((v, g) for g, v in points.items() if v > 0), reverse=True)[:3]:
+        for v, g in sorted(((v, g) for g, v in points.items() if v >= MIN_REASON_POINTS), reverse=True)[:3]:
             st.markdown(f"- {g}: **{v:+.0f}** điểm")
+
+    if exp.variable_contributions:
+        with st.expander("Đóng góp theo biến (10 biến lớn nhất, điểm)"):
+            top = sorted(exp.variable_contributions.items(), key=lambda kv: abs(kv[1]), reverse=True)[:10]
+            st.table({"Biến": [v for v, _ in top], "Đóng góp (điểm)": [f"{float(shap_to_points(x)):+.1f}" for _, x in top]})
 
     with st.expander("Chi tiết kỹ thuật"):
         st.write(f"Điểm nền {start:.1f} + tổng đóng góp {end - start:+.1f} = {end:.1f} (trước khi clip {SCORE_CLIP[0]}–{SCORE_CLIP[1]}).")
@@ -160,20 +196,34 @@ def main() -> None:
         st.header("Mô hình")
         st.write(model.name)
         if load_error:
-            st.error(f"{load_error}\n\nMô hình baseline được huấn luyện và đăng ký bởi `python scripts/run_pipeline.py`.")
+            st.error(
+                f"{load_error}\n\nMô hình cuối được xuất bởi `python scripts/run_pipeline.py --mode final-model`; "
+                "baseline được đăng ký bởi `python scripts/run_pipeline.py`."
+            )
         if model.is_mock:
             st.warning("Đang dùng mock model: kết quả chỉ để minh họa giao diện.")
+        elif getattr(model, "is_final", False):
+            watch, alert = load_thresholds()
+            st.info(
+                "PD đã hiệu chuẩn Platt trên tập Valid. Mô hình dùng bộ đặc trưng feature freeze v1 và không dùng "
+                f"SEX (Charter mục 8). Ngưỡng đã khóa: theo dõi từ PD ≥ {watch:.0%}, cảnh báo cao từ PD ≥ {alert:.0%}."
+            )
         else:
             st.info(
-                "PD chưa hiệu chuẩn trên tập Valid. Mô hình dùng bộ đặc trưng feature freeze v1 "
+                "PD của baseline chưa hiệu chuẩn trên tập Valid. Mô hình dùng bộ đặc trưng feature freeze v1 "
                 "và không dùng SEX (Charter mục 8)."
             )
         st.caption(f"Thang điểm PDO: {BASE_SCORE} điểm tại odds {BASE_ODDS}:1, PDO = {PDO}.")
         st.header("Hồ sơ mẫu")
         profile = st.selectbox("Chọn hồ sơ", list(PROFILES), index=list(PROFILES).index(DEFAULT_PROFILE))
         st.button("Nạp hồ sơ", on_click=apply_profile, args=(profile,))
-        st.header("Ngưỡng")
-        threshold = st.slider("Ngưỡng cảnh báo PD", 0.05, 0.80, DEFAULT_THRESHOLD, 0.01)
+        threshold = DEFAULT_THRESHOLD
+        if getattr(model, "is_final", False):
+            st.header("Phân tầng rủi ro")
+            st.table({"Mức": [t.label for t in TIERS], "Hành động": [t.action for t in TIERS]})
+        else:
+            st.header("Ngưỡng")
+            threshold = st.slider("Ngưỡng cảnh báo PD", 0.05, 0.80, DEFAULT_THRESHOLD, 0.01)
 
     st.title("💳 AI Credit Scoring")
     st.caption(
@@ -181,6 +231,13 @@ def main() -> None:
         "Dữ liệu: Default of Credit Card Clients (Đài Loan, 2005)."
     )
     render_form()
+    validation = validate_record(current_record())
+    for message in validation.warnings:
+        st.warning(message)
+    if not validation.ok:
+        for message in validation.errors:
+            st.error(message)
+        st.stop()
     render_result(model, threshold)
 
 
