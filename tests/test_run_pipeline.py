@@ -55,3 +55,47 @@ def test_run_pipeline_cli_dispatch_scorecard(monkeypatch):
 
     main()
     mock_scorecard.assert_called_once_with(include_sex=False, enable_feature_selection=True)
+
+
+def test_run_pipeline_cli_dispatch_summary(monkeypatch):
+    """--mode summary gọi compare_models.main (bảng so sánh sơ bộ)."""
+    mock_summary = MagicMock()
+    monkeypatch.setattr("scripts.compare_models.main", mock_summary)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "summary"])
+
+    main()
+    mock_summary.assert_called_once()
+
+
+def test_run_pipeline_cli_compare_keeps_scorecard_vs_blackbox(monkeypatch):
+    """--mode compare vẫn chạy so sánh Scorecard vs Black-box, không bị chế độ summary chiếm tên."""
+    mock_compare = MagicMock()
+    mock_summary = MagicMock()
+    monkeypatch.setattr("scripts.run_pipeline.run_compare_pipeline", mock_compare)
+    monkeypatch.setattr("scripts.compare_models.main", mock_summary)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "compare", "--include-sex"])
+
+    main()
+    mock_compare.assert_called_once_with(include_sex=True)
+    mock_summary.assert_not_called()
+
+
+def test_run_pipeline_cli_dispatch_final_model(monkeypatch):
+    """--mode final-model gọi export_final_model."""
+    mock_export = MagicMock(return_value="models/final_model.pkl")
+    monkeypatch.setattr("src.calibrate.export_final_model", mock_export)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "final-model"])
+
+    main()
+    mock_export.assert_called_once()
+
+
+def test_run_pipeline_cli_dispatch_calibrate(monkeypatch):
+    """--mode calibrate gọi run_calibration_experiments."""
+    mock_cal = MagicMock()
+    monkeypatch.setattr("src.calibrate.run_calibration_experiments", mock_cal)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "calibrate"])
+
+    main()
+    mock_cal.assert_called_once()
+

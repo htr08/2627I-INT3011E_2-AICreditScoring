@@ -98,6 +98,9 @@ class SignConstrainedLogisticRegression(BaseEstimator, ClassifierMixin):
     def predict(self, X):
         return self.model_.predict(X[self.selected_features_])
 
+    def decision_function(self, X):
+        return self.model_.decision_function(X[self.selected_features_])
+
 
 def build_feature_frame_pipeline(drop_sensitive: bool = True) -> Pipeline:
     """Cột gốc -> bộ đặc trưng feature freeze v1 dạng DataFrame (chưa encode/scale, chưa WoE).
