@@ -23,6 +23,8 @@ env/
 !reports/model_comparison.csv
 !reports/calibration_cv_metrics.csv
 !reports/calibration_cv_cost.csv
+!reports/test_evaluation/test_metrics.csv
+!reports/test_evaluation/test_comparison.csv
 *.tsv
 *.xls
 *.xlsx
