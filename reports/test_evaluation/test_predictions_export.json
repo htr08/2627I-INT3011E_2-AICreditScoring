@@ -1,0 +1,50 @@
+{
+  "started_at_utc": "2026-10-19T08:59:33.778349+00:00",
+  "purpose": "Xuất dự đoán Test của mô hình đã khóa cho phần fairness; không tính chỉ số, không đổi mô hình/calibrator/ngưỡng.",
+  "model": "lightgbm_monotone",
+  "calibration": "platt",
+  "threshold": 0.09,
+  "status": "completed",
+  "checks": [
+    {
+      "check": "mean_pd_raw",
+      "recorded": 0.2206894,
+      "observed": 0.2207145115142746,
+      "tolerance": 0.002,
+      "ok": true
+    },
+    {
+      "check": "mean_pd_final",
+      "recorded": 0.22373588,
+      "observed": 0.22374525425867461,
+      "tolerance": 0.002,
+      "ok": true
+    },
+    {
+      "check": "mean_pd_baseline",
+      "recorded": 0.22009359,
+      "observed": 0.22014463720844468,
+      "tolerance": 0.002,
+      "ok": true
+    },
+    {
+      "check": "flag_rate_at_threshold",
+      "recorded": 0.7298,
+      "observed": 0.729,
+      "tolerance": 0.005,
+      "ok": true
+    }
+  ],
+  "n_test": 6000,
+  "completed_at_utc": "2026-10-19T08:59:36.684011+00:00",
+  "columns": [
+    "ID",
+    "y_true",
+    "pd_raw",
+    "pd_final",
+    "pd_baseline"
+  ],
+  "artifacts": [
+    "test_predictions.csv"
+  ]
+}
