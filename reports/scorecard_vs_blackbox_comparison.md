@@ -32,4 +32,4 @@ Các mô hình black-box dùng bộ tham số cố định (cây nông, learning
 | CatBoost | 0.7883 | 0.7853 |
 | Random Forest | 0.7854 | 0.7667 |
 
-Chênh lệch AUC xuất phát từ cấu hình tham số: các mô hình mặc định dùng default thư viện (XGBoost `learning_rate=0.3`, cây sâu hơn; RF không giới hạn độ sâu), còn cấu hình trong báo cáo này dùng `max_depth=4`, `learning_rate=0.05` (RF `max_depth=6`). Hai bảng ứng với hai cấu hình khác nhau nên không thể so trực tiếp. Kết quả sau tuning Optuna: `experiments_optuna_tuning.md`.
+Chênh lệch AUC xuất phát từ cấu hình tham số: các mô hình mặc định dùng default thư viện (XGBoost `learning_rate=0.3`, cây sâu hơn; RF không giới hạn độ sâu), còn cấu hình trong báo cáo này dùng `max_depth=4`, `learning_rate=0.05` (RF `max_depth=6`). Hai bảng ứng với hai cấu hình khác nhau nên không thể so trực tiếp. Cột tham số mặc định lấy số T3; `model_comparison.md` dùng 0.7805 (LightGBM) và 0.7844 (CatBoost) sau khi tính lại trên fold cache của Optuna T4. Kết quả sau tuning Optuna: `experiments_optuna_tuning.md`.

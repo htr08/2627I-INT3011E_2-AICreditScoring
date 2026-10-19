@@ -5,7 +5,7 @@ Task: Tuần 3 – T3 (Thành viên A). Tập Test không được sử dụng.
 - Mô hình chính: LightGBM tuned + monotonic, Platt scaling fit trên Valid (cùng quy trình với
   `python scripts/run_pipeline.py --mode calibrate`, yêu cầu src/calibrate.py), không dùng SEX; kèm bản có SEX để đối chiếu.
 - Mô hình đối chiếu: Logistic Scorecard (WoE), không dùng SEX; kèm bản có SEX.
-- Ngưỡng: ngưỡng vận hành do thành viên B khóa trước khi đánh giá Test (mặc định 0.09) và ngưỡng đối chiếu 0.5.
+- Ngưỡng: ngưỡng vận hành khóa trước khi đánh giá Test (mặc định 0.09) và ngưỡng đối chiếu 0.5.
 - Nhóm: giới tính (Nam, Nữ) và nhóm tuổi (<30, 30–50, >50). Chỉ số tính ở src/fairness.py.
 
 Usage:
@@ -45,14 +45,14 @@ from src.fairness import (  # noqa: E402
 )
 
 FINAL_STUDY = "lightgbm_monotone"
-# Ngưỡng PD do thành viên B khóa trước khi chạy Test: làm tròn từ trung bình OOF EAD-weighted (0.088),
+# Ngưỡng PD khóa trước khi chạy Test: làm tròn từ trung bình OOF EAD-weighted (0.088),
 # tỷ lệ chi phí FN:FP = 9:1 (reports/test_evaluation/test_evaluation.md).
 OPERATING_THRESHOLD = 0.09
 REFERENCE_THRESHOLD = 0.5
 REPORT_PATH = PROJECT_ROOT / "reports" / "fairness_evaluation.md"
 N_BOOTSTRAP = 1000
 
-# Kết quả CV 5-fold của thành viên B khi thêm SEX (reports/model_comparison.md mục 3 và 6.4), dùng làm
+# Kết quả CV 5-fold khi thêm SEX (reports/model_comparison.md mục 3 và 6.4), dùng làm
 # bằng chứng độc lập với phân tích trên Valid: chênh lệch AUC trung bình và tỷ trọng tầm quan trọng của SEX.
 CV_SEX_AUC_DELTA = 0.0001
 CV_SEX_SHARE = {"LightGBM tuned + monotonic": 0.0017, "CatBoost tuned": 0.0054}
@@ -282,7 +282,7 @@ def _finish_conclusions(out, data, tables, thresholds, reference_name, flag_over
     if outside:
         text += (
             f"DIR không bị flag (quy tắc 4/5 áp dụng cho kết quả có lợi) nằm ngoài {lo_band:g}–{hi_band:g} ở: "
-            + ", ".join(outside) + ". Kết luận về công bằng ở ngưỡng này phụ thuộc vào định nghĩa DIR, cần nhóm thống nhất."
+            + ", ".join(outside) + ". Chỉ số theo Charter là DIR theo flag rate; DIR không bị flag là chỉ số bổ sung, chỉ để tham chiếu."
         )
     else:
         text += f"DIR không bị flag của mọi nhóm nằm trong {lo_band:g}–{hi_band:g}, cùng kết luận với DIR theo flag rate."
@@ -375,7 +375,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 | Tập dữ liệu | Valid, n = {n} ({n_pos} hồ sơ vỡ nợ, {n_pos / n:.2%}). Tập Test không được sử dụng. |
 | Mô hình chính | LightGBM tuned + monotonic (`{FINAL_STUDY}`), không dùng SEX, huấn luyện trên Train; Platt scaling fit trên Valid (a = {a:.4f}, b = {b:.4f}). Đây là mô hình cuối theo `week2_review.md`. |
 | Mô hình đối chiếu | Logistic Scorecard (WoE), không dùng SEX: mô hình tham chiếu minh bạch (`week2_review.md` mục 6) và là mô hình của bản đánh giá công bằng ban đầu. |
-| Ngưỡng vận hành | PD ≥ {operating:g}: ngưỡng do thành viên B khóa trước khi đánh giá Test, làm tròn từ trung bình OOF EAD-weighted (0.088) với tỷ lệ chi phí FN:FP = 9:1 theo Charter mục 7 (`reports/test_evaluation/test_evaluation.md`). Mô hình chính gắn cờ {flag_op:.1%} hồ sơ Valid. |
+| Ngưỡng vận hành | PD ≥ {operating:g}: ngưỡng khóa trước khi đánh giá Test, làm tròn từ trung bình OOF EAD-weighted (0.088) với tỷ lệ chi phí FN:FP = 9:1 theo Charter mục 7 (`reports/test_evaluation/test_evaluation.md`). Mô hình chính gắn cờ {flag_op:.1%} hồ sơ Valid. |
 | Ngưỡng đối chiếu | PD ≥ {reference:g}: ngưỡng phân loại mặc định, mô hình chính gắn cờ {flag_ref:.1%} hồ sơ Valid. Dùng để kiểm tra độ nhạy của kết luận theo ngưỡng, vì ngưỡng vận hành gắn cờ phần lớn danh mục. |
 | Nhóm | Giới tính (SEX = 1 Nam, 2 Nữ) và nhóm tuổi <30, 30–50, >50 (30 và 50 thuộc nhóm 30–50). Hai thuộc tính này chỉ dùng để đánh giá; mô hình không dùng SEX, AGE được đưa vào dưới dạng `AGE_BIN` (Charter mục 8). |
 | Flag rate | Tỷ lệ hồ sơ bị gắn cờ can thiệp (PD ≥ ngưỡng). |
@@ -391,7 +391,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 
 - {scorecard_text}
 - Với mô hình chính, thêm SEX đổi AUC Valid {overall_summary(y, pd_by_model[MAIN_SEX], operating)['auc'] - overall_summary(y, pd_by_model[MAIN], operating)['auc']:+.4f} và SEX chiếm {data['sex_importance_share']:.2%} tầm quan trọng (gain) của mô hình có SEX.
-- Kết quả CV 5-fold của thành viên B (`model_comparison.md` mục 6.4) cùng chiều: thêm SEX đổi AUC trung bình {CV_SEX_AUC_DELTA:+.4f}; tỷ trọng tầm quan trọng của SEX là {cv_text}.
+- Kết quả CV 5-fold (`model_comparison.md` mục 6.4) cùng chiều: thêm SEX đổi AUC trung bình {CV_SEX_AUC_DELTA:+.4f}; tỷ trọng tầm quan trọng của SEX là {cv_text}.
 
 ---
 
@@ -427,7 +427,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 
 ## 6. Hạn chế
 
-- Kết quả trên Valid. Kết quả trên Test (dự đoán xuất sau lượt nghiệm thu của thành viên B): `fairness_evaluation_test.md`.
+- Kết quả trên Valid. Kết quả trên Test (dự đoán xuất sau lượt nghiệm thu): `fairness_evaluation_test.md`.
 - DIR đo chênh lệch tỷ lệ gắn cờ giữa các nhóm, không hiệu chỉnh theo chênh lệch tỷ lệ vỡ nợ thực tế giữa các nhóm. Recall và tỷ lệ cảnh báo oan theo nhóm (equalized odds) không nằm trong phạm vi báo cáo.
 - Nhóm {AGE_GROUP_ORDER[2]} có {int((age == AGE_GROUP_ORDER[2]).sum())} hồ sơ nên CI của DIR và AUC rộng; chênh lệch nằm trong CI chưa đủ bằng chứng là khác biệt thực.
 - Calibrator Platt (hai tham số a, b) được fit trên chính tập Valid dùng để đánh giá.
@@ -497,7 +497,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 
 | Hạng mục | Nội dung |
 | :--- | :--- |
-| Tập dữ liệu | Test, n = {n} ({n_pos} hồ sơ vỡ nợ, {n_pos / n:.2%}). Dự đoán lấy từ `reports/test_evaluation/test_predictions.csv`, xuất sau lượt đánh giá Test của thành viên B; báo cáo này không chấm điểm lại Test. |
+| Tập dữ liệu | Test, n = {n} ({n_pos} hồ sơ vỡ nợ, {n_pos / n:.2%}). Dự đoán lấy từ `reports/test_evaluation/test_predictions.csv`, xuất sau lượt đánh giá Test; báo cáo này không chấm điểm lại Test. |
 | Mô hình chính | LightGBM tuned + monotonic, Platt fit trên Valid, không dùng SEX. |
 | Mô hình đối chiếu | Logistic Regression baseline, mô hình đối chiếu của lượt đánh giá Test (không qua Platt). |
 | Ngưỡng | PD ≥ {operating:g} (ngưỡng vận hành đã khóa, mô hình chính gắn cờ {flag_op:.1%} hồ sơ Test) và PD ≥ {reference:g} (đối chiếu, gắn cờ {flag_ref:.1%}). |
@@ -538,7 +538,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 ## 5. Hạn chế
 
 - Test chỉ có dự đoán của mô hình chính và baseline; bản có SEX và Scorecard không được chấm trên Test, nên tác động của SEX được đánh giá trên Valid (`fairness_evaluation.md` mục 2).
-- Mô hình được huấn luyện lại để xuất dự đoán; flag rate ở ngưỡng 0.09 lệch 5 hồ sơ so với báo cáo nghiệm thu của B (`test_evaluation/test_evaluation.md`).
+- Mô hình được huấn luyện lại để xuất dự đoán; flag rate ở ngưỡng 0.09 lệch 5 hồ sơ so với báo cáo nghiệm thu (`test_evaluation/test_evaluation.md`).
 - DIR đo chênh lệch tỷ lệ gắn cờ, không hiệu chỉnh theo chênh lệch tỷ lệ vỡ nợ thực tế giữa các nhóm; nhóm {AGE_GROUP_ORDER[2]} có {int((age == AGE_GROUP_ORDER[2]).sum())} hồ sơ nên CI rộng.
 
 ## 6. Tái lập

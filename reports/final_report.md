@@ -14,7 +14,7 @@ Dự án xây dựng pipeline dự đoán xác suất vỡ nợ (PD) trong thán
 | So với baseline Logistic Regression (0.7609) | ΔAUC = 0.0215, DeLong p = 1.86 × 10⁻⁹: KPI chính đạt |
 | ROC-AUC 5-fold CV | 0.7906 ± 0.0074 |
 | Ngưỡng vận hành | PD ≥ 0.09 (recall 92.46%, precision 28.02%, gắn cờ 72.98% hồ sơ Test) |
-| Fairness | Chênh lệch theo giới tính và nhóm tuổi nhỏ ở ngưỡng vận hành; kết luận phụ thuộc định nghĩa DIR (mục 9) |
+| Fairness | DIR theo flag rate (chỉ số Charter) của mọi nhóm giới tính và tuổi nằm trong dải 0.8–1.25 ở ngưỡng vận hành; chỉ số bổ sung DIR không bị flag của nhóm >50 ngoài dải (mục 9) |
 | Hạn chế chính | Dữ liệu một ngân hàng, năm 2005, một snapshot; Gini, KS, PR-AUC trên Test dưới mốc sàn tham chiếu; ngưỡng gắn cờ khoảng 73% danh mục |
 
 Mô hình là công cụ cảnh báo sớm và quản lý danh mục hiện hữu, không phải công cụ xét duyệt tín dụng mới, và không sẵn sàng triển khai thực tế.
@@ -158,7 +158,7 @@ Chính sách: `SEX` không dùng trong mô hình; `AGE` chỉ dùng dạng binni
 
 - Thêm `SEX` vào mô hình đổi AUC Valid +0.0002; việc bỏ `SEX` không làm giảm hiệu năng nhưng cũng không triệt tiêu chênh lệch flag rate trên Valid, phù hợp với chênh lệch tỷ lệ vỡ nợ thực tế giữa hai nhóm.
 - AUC thấp nhất ở nhóm >50 trên Valid (0.759, N = 448) nhưng khoảng tin cậy chồng lấn với nhóm 30–50.
-- Ở ngưỡng 0.09 mô hình gắn cờ khoảng 73% hồ sơ nên DIR theo flag rate bị nén; DIR của tỷ lệ không bị flag (chỉ số bổ sung, không thuộc Charter) của nhóm >50 là 0.70 (Valid) và 0.64 (Test), ngoài dải. Định nghĩa DIR cần nhóm thống nhất.
+- Ở ngưỡng 0.09 mô hình gắn cờ khoảng 73% hồ sơ nên DIR theo flag rate bị nén; DIR của tỷ lệ không bị flag (chỉ số bổ sung, không thuộc Charter) của nhóm >50 là 0.70 (Valid) và 0.64 (Test), ngoài dải. Chỉ số theo Charter là DIR theo flag rate; chỉ số bổ sung chỉ để tham chiếu.
 
 ---
 
@@ -185,7 +185,7 @@ Chính sách: `SEX` không dùng trong mô hình; `AGE` chỉ dùng dạng binni
 
 Mô hình cuối vượt baseline với ý nghĩa thống kê, cho PD hiệu chuẩn có thể giải thích theo nhóm đặc trưng và đã được tích hợp vào demo kèm phân tầng rủi ro. Trần hiệu năng của bộ dữ liệu (ROC-AUC khoảng 0.78–0.79) không bị phá bởi tuning hay thay đổi đặc trưng, nên cải thiện tiếp cần thêm thông tin, không phải thêm tuning.
 
-Hướng phát triển: (1) dữ liệu nhiều giai đoạn để kiểm định out-of-time và PD 12 tháng; (2) chọn ngưỡng theo sức chứa của quy trình can thiệp thay vì chỉ theo chi phí giả định; (3) chốt định nghĩa DIR và bổ sung đánh giá cơ hội bình đẳng theo nhóm; (4) giám sát độ lệch phân phối, hiệu chuẩn và công bằng khi triển khai.
+Hướng phát triển: (1) dữ liệu nhiều giai đoạn để kiểm định out-of-time và PD 12 tháng; (2) chọn ngưỡng theo sức chứa của quy trình can thiệp thay vì chỉ theo chi phí giả định; (3) bổ sung đánh giá cơ hội bình đẳng theo nhóm (recall và tỷ lệ cảnh báo oan); (4) giám sát độ lệch phân phối, hiệu chuẩn và công bằng khi triển khai.
 
 ---
 

@@ -5,7 +5,7 @@ Task: Tuần 3 – T2 (Thành viên A). Tập Test không được sử dụng.
 - Mô hình chính: LightGBM tuned + monotonic, Platt scaling fit trên Valid (cùng quy trình với
   `python scripts/run_pipeline.py --mode calibrate`, yêu cầu src/calibrate.py).
 - Mô hình đối chiếu: Logistic Scorecard (WoE).
-- Ngưỡng: ngưỡng vận hành do thành viên B khóa trước khi đánh giá Test (mặc định 0.09) và ngưỡng đối chiếu 0.5.
+- Ngưỡng: ngưỡng vận hành khóa trước khi đánh giá Test (mặc định 0.09) và ngưỡng đối chiếu 0.5.
 
 Usage:
     python scripts/analyze_errors.py
@@ -45,7 +45,7 @@ from src.error_analysis import (  # noqa: E402
 )
 
 FINAL_STUDY = "lightgbm_monotone"
-# Ngưỡng PD do thành viên B khóa trước khi chạy Test: làm tròn từ trung bình OOF EAD-weighted (0.088),
+# Ngưỡng PD khóa trước khi chạy Test: làm tròn từ trung bình OOF EAD-weighted (0.088),
 # tỷ lệ chi phí FN:FP = 9:1 (reports/test_evaluation/test_evaluation.md).
 OPERATING_THRESHOLD = 0.09
 REFERENCE_THRESHOLD = 0.5
@@ -325,7 +325,7 @@ _Tuần 3 – T2: Thành viên A (Data Engineer / Analyst)_
 | Tập dữ liệu | Valid, n = {n} ({n_pos} hồ sơ vỡ nợ, {n_pos / n:.2%}). Tập Test không được sử dụng. |
 | Mô hình chính | LightGBM tuned + monotonic (`{FINAL_STUDY}`, tham số trong `configs/tuned_params.yaml`), huấn luyện trên Train, Platt scaling fit trên Valid (a = {a:.4f}, b = {b:.4f}). Đây là mô hình cuối theo `week2_review.md`. |
 | Mô hình đối chiếu | Logistic Scorecard (WoE): mô hình tham chiếu minh bạch (`week2_review.md` mục 6) và là mô hình của bản phân tích lỗi ban đầu. Dùng để kiểm tra mẫu lỗi có phụ thuộc loại mô hình hay không. |
-| Ngưỡng vận hành | PD ≥ {operating:g}: ngưỡng do thành viên B khóa trước khi đánh giá Test, làm tròn từ trung bình OOF EAD-weighted (0.088) với tỷ lệ chi phí FN:FP = 9:1 theo Charter mục 7 (`reports/test_evaluation/test_evaluation.md`). Gắn cờ {flag_op:.1%} hồ sơ Valid ở mô hình chính. |
+| Ngưỡng vận hành | PD ≥ {operating:g}: ngưỡng khóa trước khi đánh giá Test, làm tròn từ trung bình OOF EAD-weighted (0.088) với tỷ lệ chi phí FN:FP = 9:1 theo Charter mục 7 (`reports/test_evaluation/test_evaluation.md`). Gắn cờ {flag_op:.1%} hồ sơ Valid ở mô hình chính. |
 | Ngưỡng đối chiếu | PD ≥ {reference:g}: ngưỡng phân loại mặc định, gắn cờ {flag_ref:.1%} hồ sơ Valid ở mô hình chính. Do ngưỡng vận hành gắn cờ phần lớn danh mục nên FP ở đó gồm nhiều hồ sơ rủi ro thấp; ngưỡng {reference:g} chỉ giữ các ca PD cao để quan sát lỗi ở vùng tự tin. |
 | Định nghĩa nhóm | Theo Charter mục 7 (công cụ cảnh báo sớm cho danh mục hiện hữu). **FN**: khách hàng vỡ nợ thực tế nhưng không bị gắn cờ (bỏ sót, không kịp can thiệp). **FP**: khách hàng không vỡ nợ nhưng bị gắn cờ (cảnh báo hoặc giảm hạn mức oan). **TP**, **TN**: gắn cờ đúng khách vỡ nợ, không gắn cờ đúng khách không vỡ nợ. |
 | Hồ sơ mô tả | Cột gốc của Valid sau làm sạch mã bất thường, cùng các đặc trưng dẫn xuất T2 của `src/features.py` (tính trực tiếp trên Valid, không học tham số từ dữ liệu). Giá trị là trung bình theo nhóm; `PD` là PD trung bình của mô hình tương ứng. |

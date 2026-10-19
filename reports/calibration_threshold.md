@@ -15,14 +15,14 @@ Theo phân công nhiệm vụ tại `reports/project_plan.md` (mục 4.3 – Tu�
      - Chi phí FN (bỏ sót khách sắp vỡ nợ, không kịp can thiệp sớm) $\approx \text{LGD} \times \text{EAD}$ với giả định $\text{LGD} = 0.45$.
      - Chi phí FP (cảnh báo oan, giảm hạn mức của khách hàng tốt) $\approx 5\% \times \text{EAD}$.
      - Tỷ lệ chi phí chuẩn $\text{Cost(FN)} : \text{Cost(FP)} = 0.45 : 0.05 = 9:1$.
-   - Thực hiện phân tích độ nhạy (Sensitivity Analysis) toàn diện với tỷ lệ chi phí FN:FP dao động từ **3:1 đến 10:1**.
+   - Phân tích độ nhạy (Sensitivity Analysis) với tỷ lệ chi phí FN:FP dao động từ **3:1 đến 10:1**.
 3. **Quy đổi PD sang điểm tín dụng theo phương pháp PDO (Points to Double the Odds):**
    - Chuyển đổi xác suất vỡ nợ đã hiệu chuẩn $PD$ sang thang điểm tín dụng chuẩn ngân hàng giới hạn trong khoảng **[300, 850]** với tham số $\text{Base Score} = 600$ tại $\text{Base Odds} = 50:1$ và $\text{PDO} = 20$.
    - Xác định ngưỡng điểm cắt (cutoff score) phân loại hồ sơ rủi ro tương ứng với ngưỡng chi phí tối ưu.
 4. **Tuân thủ kỷ luật phân chia dữ liệu (Data Split Integrity):**
    - **Tập Train (60% - 18.000 dòng):** Huấn luyện mô hình cơ sở với siêu tham số đã đóng băng.
    - **Tập Valid (20% - 6.000 dòng):** Dùng để fit calibrator, tối ưu hóa ngưỡng chi phí và khảo sát phân phối điểm số.
-   - **Tập Test (20% - 6.000 dòng):** Đóng băng 100%, tuyệt đối không can thiệp, bảo lưu cho ngày Tuần 3 – T3 chạy nghiệm thu duy nhất 1 lần.
+   - **Tập Test (20% - 6.000 dòng):** Không dùng trong hiệu chuẩn, chọn ngưỡng hay phân tích; dành cho nghiệm thu một lượt ở Tuần 3 – T3.
 
 ---
 
@@ -35,7 +35,7 @@ Thực nghiệm được thực hiện trên 3 mô hình tiêu biểu từ kết
 
 ### 2.1. Kết quả fit và đánh giá trên cùng tập Valid (6.000 mẫu; in-sample)
 
-**Lưu ý review:** Các chỉ số dưới đây là kết quả fit calibrator và đánh giá trên cùng 6.000 mẫu Valid, nên Isotonic có lợi thế in-sample. Bảng 2.1 không dùng để xếp hạng phương pháp; xem kết quả 5-fold OOF tại mục 2.2. Tập Test vẫn dành cho nghiệm thu cuối cùng.
+**Lưu ý:** Các chỉ số dưới đây là kết quả fit calibrator và đánh giá trên cùng 6.000 mẫu Valid, nên Isotonic có lợi thế in-sample. Bảng 2.1 không dùng để xếp hạng phương pháp; xem kết quả 5-fold OOF tại mục 2.2. Tập Test không được dùng trong bảng này.
 
 | Mô hình | Phương pháp | Brier Score | Log Loss | ROC-AUC | ECE | Platt $a$ (dốc) | Platt $b$ (hệ số tự do) | Ghi chú kỹ thuật |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
@@ -71,9 +71,9 @@ OOF không cho thấy Brier của Platt hoặc Isotonic tốt hơn xác suất t
 
 ## 3. Phân tích Kỹ thuật: So sánh Platt Scaling vs. Isotonic Regression
 
-### 3.1. Tại sao Platt scaling fit tay trên raw margin là phương án tối ưu cho XAI / SHAP?
+### 3.1. Lý do chọn Platt scaling fit tay trên raw margin cho XAI / SHAP
 
-Platt là lựa chọn **tương thích** với việc giữ tính cộng tính SHAP trên logit sau hiệu chuẩn; từ “tối ưu” ở đây chỉ nói về tính chất giải thích này, không khẳng định chất lượng PD tốt hơn.
+Platt là lựa chọn **tương thích** với việc giữ tính cộng tính SHAP trên logit sau hiệu chuẩn; lựa chọn này không dựa trên chất lượng PD tốt hơn.
 
 Theo quy ước kỹ thuật tại `project_plan.md` mục 3.5e:
 - Thuật toán `TreeExplainer` của SHAP giải thích đầu ra thô của mô hình trên không gian **log-odds (margin)**:
@@ -82,7 +82,7 @@ Theo quy ước kỹ thuật tại `project_plan.md` mục 3.5e:
   $$\text{logit}(PD) = a \cdot \text{margin}(x) + b$$
 - Thay triển khai SHAP vào công thức hiệu chuẩn:
   $$\text{logit}(PD) = (a \cdot \phi_0 + b) + \sum_{i=1}^{M} (a \cdot \phi_i(x))$$
-- **Hệ quả cực kỳ quan trọng:** Mọi giá trị đóng góp SHAP $\phi_i$ chỉ cần nhân với hệ số vô hướng $a$ ($a = 1.0129$ đối với LightGBM) thì tổng đóng góp của tất cả các đặc trưng sẽ cộng đúng chính xác bằng logit của PD hiển thị trên giao diện người dùng!
+- **Hệ quả:** nhân mọi giá trị đóng góp SHAP $\phi_i$ với hệ số vô hướng $a$ ($a = 1.0129$ đối với LightGBM) thì tổng đóng góp của tất cả các đặc trưng cộng đúng bằng logit của PD hiển thị trên giao diện người dùng.
 - Ngược lại, nếu dùng `CalibratedClassifierCV(method="sigmoid")` của Scikit-learn, hàm này sẽ fit sigmoid lên xác suất đã qua sigmoid ($p$), phá vỡ quan hệ tuyến tính.
 - Nếu dùng **Isotonic Regression**, do đây là hàm từng đoạn không liên tục (piecewise constant step-function), không tồn tại phép biến đổi tuyến tính tương đương, khiến tổng SHAP không còn khớp với PD cuối cùng.
 
@@ -109,7 +109,7 @@ $$\text{Expected Cost} = \frac{1}{N} \left[ \text{Cost}_{FN} \times \sum_{i \in 
 
 ### 4.2. Ước lượng in-sample tại ngưỡng được chọn trên Valid
 
-Ngưỡng và chi phí dưới đây được chọn và đo trên cùng tập Valid, vì vậy **mức giảm chi phí là lạc quan và không phải ước lượng hiệu quả triển khai**. Dùng `cv_cost` từ chế độ `--mode calibrate` để báo cáo chi phí held-out theo fold; chỉ Test mới là đánh giá cuối theo kế hoạch.
+Ngưỡng và chi phí dưới đây được chọn và đo trên cùng tập Valid, vì vậy **mức giảm chi phí là lạc quan và không phải ước lượng hiệu quả triển khai**. Chi phí held-out theo fold nằm ở mục 4.3; đánh giá cuối là Test (mục 7).
 
 | Mô hình (Đã hiệu chuẩn Platt) | Ngưỡng Tối ưu ($p^*$) | Chi phí Kỳ vọng Đơn vị ($p^*$) | Chi phí tại Ngưỡng $0.50$ | **Mức giảm Chi phí (%)** | Recall ($p^*$) | Flag Rate ($p^*$) | Precision ($p^*$) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -166,11 +166,11 @@ Các số trong bảng độ nhạy bên dưới là tối ưu in-sample trên V
 | **5 : 1** | 0.25 | 0.05 | **0.15** | 0.02613 | 49.72% | 81.54% | 36.29% | Trạng thái thị trường ổn định, cân bằng giữa kiểm soát và trải nghiệm |
 | **7 : 1** | 0.35 | 0.05 | **0.13** | 0.03021 | 56.98% | 85.61% | 33.24% | Thắt chặt tín dụng khi kinh tế vĩ mô có biến động tiêu cực |
 | **9 : 1 (Chuẩn Charter)** | **0.45** | **0.05** | **0.11** | **0.03322** | **64.72%** | **89.22%** | **30.49%** | **Chuẩn mực theo Charter: LGD = 45%, Mất lãi = 5%** |
-| **10 : 1** | 0.50 | 0.05 | **0.11** | 0.03444 | 64.72% | 89.22% | 30.49% | Khẩu vị rủi ro cực kỳ thận trọng (khách hàng có nợ lớn) |
+| **10 : 1** | 0.50 | 0.05 | **0.11** | 0.03444 | 64.72% | 89.22% | 30.49% | Khẩu vị rủi ro rất thận trọng (khách hàng có nợ lớn) |
 
 ### Nhận xét về độ nhạy:
 1. Khi tỷ lệ FN:FP tăng từ 3:1 lên 9:1, ngưỡng quyết định hạ từ **0.27 xuống 0.11**, phản ánh trực giác nghiệp vụ: cái giá của việc bỏ sót khách vỡ nợ càng đắt thì hệ thống càng chủ động hạ thấp ngưỡng cảnh báo sớm để can thiệp kịp thời.
-2. Đường chi phí khá phẳng trong vùng xấp xỉ **0.08–0.14** (chênh lệch chi phí khoảng 2% theo kết quả hiện có). Vì vậy, nếu cần mô tả vùng ứng viên thì dùng **0.09–0.13**, không coi 0.11 là điểm tối ưu chính xác hay ngưỡng đã được xác nhận. Mức ổn định cần được kiểm tra lại bằng CV/Bootstrap và cuối cùng trên Test.
+2. Đường chi phí khá phẳng trong vùng xấp xỉ **0.08–0.14** (chênh lệch chi phí khoảng 2% theo kết quả hiện có). Vì vậy, nếu cần mô tả vùng ứng viên thì dùng **0.09–0.13**, không coi 0.11 là điểm tối ưu chính xác hay ngưỡng đã được xác nhận. Mức ổn định được kiểm tra bằng CV ở mục 4.3 và trên Test ở mục 7.
 
 ---
 
@@ -204,7 +204,7 @@ Kết quả in-sample áp dụng trên ứng viên `LightGBM tuned + Monotonic` 
 
 Phân phối điểm tín dụng trên Valid được sinh cùng lệnh tại `reports/figures/score_distribution.png`.
 
-PD trung bình của các hồ sơ Valid cần được tính trực tiếp từ `scores`/xác suất hiệu chuẩn, không suy ra từ điểm trung bình. Báo cáo hiện ghi tỷ lệ vỡ nợ thực tế Valid là **22,12%**; nếu nêu PD trung bình dự đoán, hãy ghi riêng giá trị được tính trực tiếp và phân biệt với tỷ lệ thực tế.
+PD trung bình của các hồ sơ Valid được tính trực tiếp từ xác suất hiệu chuẩn, không suy ra từ điểm trung bình. Tỷ lệ vỡ nợ thực tế của Valid là **22,12%**; PD trung bình dự đoán (mục 2.1) là đại lượng riêng, không đồng nhất với tỷ lệ thực tế.
 
 ### 6.3. Bảng Phân tầng Rủi ro & Hành động Đề xuất (Action Tiers)
 
@@ -220,21 +220,21 @@ Tỷ trọng và tỷ lệ vỡ nợ thực tế trong bảng được tính l�
 
 ---
 
-## 7. Kết luận và Bàn giao Tiến độ
+## 7. Kết luận
 
-1. **Hoàn thành trọn vẹn nhiệm vụ Tuần 3 – T2 của Thành viên B:**
-   - Hoàn thành module `src/calibrate.py` bao gồm đầy đủ `PlattCalibrator`, `IsotonicCalibrator`, `CalibratedPipeline` và các hàm phân tích chi phí, ECE.
-   - Thêm phương thức `decision_function` cho `SignConstrainedLogisticRegression` trong `src/pipelines.py` bảo đảm tính tương thích đồng bộ.
-   - Bổ sung cấu hình `calibration`, `cost_matrix`, `scoring` chuẩn hóa vào `configs/config.yaml`.
-   - Xây dựng thành công notebook tương tác `notebooks/04_calibration_threshold.ipynb` tái hiện toàn bộ chu trình.
-   - Có bộ kiểm thử cho calibrator, đánh giá OOF, lưu/nạp mô hình và CLI (`tests/test_calibrate.py`, `tests/test_run_pipeline.py`).
-   - Tích hợp cờ `--mode calibrate` vào `scripts/run_pipeline.py`.
-2. **Quyết định Kỹ thuật then chốt:**
+1. **Nội dung triển khai (Tuần 3 – T2):**
+   - Module `src/calibrate.py`: `PlattCalibrator`, `IsotonicCalibrator`, `CalibratedPipeline` và các hàm phân tích chi phí, ECE.
+   - Phương thức `decision_function` của `SignConstrainedLogisticRegression` trong `src/pipelines.py`, để tương thích với calibrator.
+   - Cấu hình `calibration`, `cost_matrix`, `scoring` trong `configs/config.yaml`.
+   - Notebook `notebooks/04_calibration_threshold.ipynb` tái hiện toàn bộ chu trình.
+   - Kiểm thử calibrator, đánh giá OOF, lưu/nạp mô hình và CLI: `tests/test_calibrate.py`, `tests/test_run_pipeline.py`.
+   - Chế độ `--mode calibrate` trong `scripts/run_pipeline.py`.
+2. **Quyết định kỹ thuật chính:**
    - OOF chưa cho thấy Platt hoặc Isotonic cải thiện Brier so với xác suất thô. Nếu vẫn cần hiệu chuẩn để hỗ trợ diễn giải SHAP, Platt là phương án giữ được tính cộng tính nhưng phải chấp nhận rằng lợi ích PD chưa được chứng minh.
    - **Tham số Platt Scaling:** $a = 1.0129$, $b = 0.0367$ (báo cáo OOF). Mô hình lưu tại `models/final_model.pkl`, huấn luyện lại bằng `--mode final-model`, cho $a = 1.0128$, $b = 0.0364$.
    - **Ngưỡng vận hành: PD ≥ 0.09, cutoff 553.9 điểm**, khóa trước khi đánh giá Test (mục 4.5). Ngưỡng 0.11 và cutoff 547.5 là kết quả in-sample trên Valid, chỉ để đối chiếu.
    - Mức giảm chi phí 48,66% và Recall 89,22% cũng là số in-sample; không diễn giải như hiệu quả ngoài mẫu.
-3. **Nghiệm thu Tuần 3 – T3:**
+3. **Nghiệm thu Tuần 3 – T3 và đầu ra cho các phần khác:**
    - Test được đánh giá một lần: LightGBM + Platt đạt ROC-AUC 0.7825 (bootstrap 95% CI 0.7681–0.7973), cao hơn baseline Logistic 0.7609; DeLong p = 1.86 × 10⁻⁹. Chi tiết và đối chiếu KPI tham chiếu: `test_evaluation/test_evaluation.md`.
-   - Bàn giao cho Thành viên C: `models/final_model.pkl` (`CalibratedPipeline`: LightGBM monotonic + Platt, ngưỡng 0.09), nạp bằng `src.calibrate.load_calibrated_pipeline`; xuất lại bằng `python scripts/run_pipeline.py --mode final-model` (chỉ dùng Train và Valid). Bảng phân tầng ở mục 6.3.
-   - Bàn giao cho Thành viên A: dự đoán Test của các mô hình đã đánh giá (`test_evaluation/test_predictions.csv`, không commit) phục vụ phần fairness.
+   - Mô hình cho demo: `models/final_model.pkl` (`CalibratedPipeline`: LightGBM monotonic + Platt, ngưỡng 0.09), nạp bằng `src.calibrate.load_calibrated_pipeline`; xuất lại bằng `python scripts/run_pipeline.py --mode final-model` (chỉ dùng Train và Valid). Bảng phân tầng ở mục 6.3.
+   - Đầu ra cho phần fairness: dự đoán Test của các mô hình đã đánh giá (`test_evaluation/test_predictions.csv`, không commit).

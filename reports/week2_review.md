@@ -4,7 +4,7 @@ _Tuần 2 – T6. Số liệu CV lấy từ MLflow._
 
 ## 1. Mục đích
 
-Tài liệu tổng hợp kết quả Tuần 2 làm cơ sở thống nhất 1–2 mô hình cuối chuyển sang Tuần 3 (calibration, chọn ngưỡng, đánh giá Test, tích hợp Streamlit). Tập Test chưa được sử dụng ở bất kỳ bước nào.
+Tài liệu tổng hợp kết quả Tuần 2 làm cơ sở thống nhất 1–2 mô hình cuối chuyển sang Tuần 3 (calibration, chọn ngưỡng, đánh giá Test, tích hợp Streamlit). Tại thời điểm viết, tập Test chưa được sử dụng ở bất kỳ bước nào.
 
 ## 2. Mô hình ứng viên
 
@@ -53,7 +53,7 @@ Hai mô hình chỉ được huấn luyện với tham số mặc định; bư�
 | PR-AUC (0.56 / 0.58) | Đạt sàn | Đạt sàn |
 | KS (0.45 / 0.47) | Chưa đạt sàn (0.4453) | Chưa đạt sàn (0.4452) |
 
-KPI chính (vượt baseline có ý nghĩa thống kê) được xác nhận bằng bootstrap CI trên Test ở Tuần 3.
+KPI chính (vượt baseline có ý nghĩa thống kê) được xác nhận bằng DeLong test và bootstrap CI trên Test ở Tuần 3 (`test_evaluation/test_evaluation.md`).
 
 ## 5. Tiêu chí XAI và sản phẩm
 

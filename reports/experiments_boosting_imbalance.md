@@ -11,7 +11,7 @@ Theo kế hoạch tại `reports/project_plan.md` (mục 3.3, 3.5c và phân cô
 2. **Thực nghiệm Cân bằng Lớp (Cost/Weight-based):** Thử nghiệm cơ chế gán trọng số lớp (`class_weight="balanced"` trên LightGBM và `auto_class_weights="Balanced"` trên CatBoost).
 3. **Thí nghiệm phụ Resampling (SMOTE in-fold):** Tích hợp SMOTE bên trong từng fold cross-validation thông qua `imblearn.pipeline.Pipeline`, đảm bảo:
    - SMOTE chỉ `fit_resample` trên dữ liệu huấn luyện của từng fold.
-   - Tập validation trong từng fold hoàn toàn không bị resample hay rò rỉ dữ liệu (không data leakage).
+   - Tập validation trong từng fold không bị resample hay rò rỉ dữ liệu (không data leakage).
 
 ---
 
@@ -35,19 +35,21 @@ Tất cả các mô hình được đánh giá trên cùng tập Train 18.000 m�
 
 ¹ Cập nhật theo bản Scorecard chính thức (ràng buộc dấu + coarse classing, số liệu từ MLflow). Số 0.7809 ghi ở thời điểm T3 là của cấu hình LR 5 bin trước khi chốt.
 
+ROC-AUC của LightGBM và CatBoost mặc định ở T3 (0.7813; 0.7853) khác số trong `model_comparison.md` (0.7805; 0.7844), vì các báo cáo sau tính lại trên cùng fold cache của Optuna T4 (`experiments_optuna_tuning.md` mục 3.2).
+
 ---
 
 ## 3. Phân tích Chi tiết và Đánh giá Chuyên môn
 
-### 3.1. Hiệu năng vượt trội của CatBoost và LightGBM
-- **CatBoost Default thiết lập kỷ lục mới:** Đạt ROC-AUC **0.7853 ± 0.0077** và KS **0.4359**, trở thành mô hình có năng lực phân tách rủi ro cao nhất toàn bộ dự án tới thời điểm này, vượt qua Logistic Scorecard WoE (0.7790) và baseline Logistic Regression (0.7745).
+### 3.1. Hiệu năng của CatBoost và LightGBM
+- **CatBoost Default:** Đạt ROC-AUC **0.7853 ± 0.0077** và KS **0.4359**, trở thành mô hình có năng lực phân tách rủi ro cao nhất toàn bộ dự án tới thời điểm này, vượt qua Logistic Scorecard WoE (0.7790) và baseline Logistic Regression (0.7745).
 - **Vượt mốc sàn KPI Charter:** Cả CatBoost (0.7853) và LightGBM (0.7813) đều vượt mốc sàn ROC-AUC $\ge 0.78$ ngay từ bộ tham số mặc định trước khi tuning.
-- **Brier Score tối ưu:** CatBoost Default đạt Brier score thấp nhất (0.1342), cho thấy độ chính xác dự báo xác suất thô tốt hơn so với baseline và XGBoost.
+- **Brier Score thấp nhất:** CatBoost Default đạt Brier score thấp nhất (0.1342), cho thấy độ chính xác dự báo xác suất thô tốt hơn so với baseline và XGBoost.
 
 ### 3.2. Ảnh hưởng của Cơ chế Cân bằng Lớp (`class_weight`)
-- **Tăng vọt Recall:** Ở ngưỡng phân loại mặc định 0.5, việc kích hoạt trọng số cân bằng lớp làm Recall tăng từ ~37.7% lên **61.1%** (LightGBM) và **60.7%** (CatBoost) — tức tăng hơn 60% khả năng bắt trúng các hồ sơ vỡ nợ. F1-score cũng tăng từ ~0.48 lên **0.54**.
-- **ROC-AUC được bảo toàn:** ROC-AUC hầu như không bị ảnh hưởng tiêu cực (LightGBM: 0.7813 → 0.7809; CatBoost: 0.7853 → 0.7806, chênh lệch $< 0.005$, hoàn toàn trong phạm vi độ lệch chuẩn).
-- **Méo xác suất đầu ra (Brier Score tăng):** Brier score tăng mạnh từ 0.134 lên 0.166–0.168. Đúng như phân tích tại `project_plan.md` mục 3.5c: gán trọng số đẩy phân phối xác suất về phía 0.5, làm xác suất đầu ra không còn phản ánh đúng tỷ lệ vỡ nợ thực tế (22%). **Hệ quả kỹ thuật:** Nếu sử dụng mô hình có class_weight, bắt buộc phải qua bước Probability Calibration (Platt Scaling hoặc Isotonic) trên tập Valid ở Tuần 3.
+- **Recall tăng:** Ở ngưỡng phân loại mặc định 0.5, việc kích hoạt trọng số cân bằng lớp làm Recall tăng từ ~37.7% lên **61.1%** (LightGBM) và **60.7%** (CatBoost) — tức tăng tương đối hơn 60%. F1-score cũng tăng từ ~0.48 lên **0.54**.
+- **ROC-AUC được bảo toàn:** ROC-AUC hầu như không bị ảnh hưởng tiêu cực (LightGBM: 0.7813 → 0.7809; CatBoost: 0.7853 → 0.7806, chênh lệch $< 0.005$, nằm trong phạm vi độ lệch chuẩn).
+- **Méo xác suất đầu ra (Brier Score tăng):** Brier score tăng mạnh từ 0.134 lên 0.166–0.168. Đúng như phân tích tại `project_plan.md` mục 3.5c: gán trọng số đẩy phân phối xác suất về phía 0.5, làm xác suất đầu ra không còn phản ánh đúng tỷ lệ vỡ nợ thực tế (22%). **Hệ quả kỹ thuật:** Nếu sử dụng mô hình có class_weight, bắt buộc phải qua bước Probability Calibration (Platt Scaling hoặc Isotonic) trên tập Valid (thực hiện ở `calibration_threshold.md`).
 
 ### 3.3. Đánh giá Thí nghiệm phụ SMOTE in-fold
 - **Không cải thiện khả năng phân tách:** Cả 2 mô hình đều bị giảm ROC-AUC khi dùng SMOTE (LightGBM giảm từ 0.7813 xuống 0.7776; CatBoost giảm từ 0.7853 xuống 0.7747).
@@ -73,7 +75,7 @@ Tất cả các mô hình được đánh giá trên cùng tập Train 18.000 m�
      - `python scripts/run_pipeline.py --mode imbalance`
      - `python scripts/run_pipeline.py --mode all`
 4. **`tests/test_train.py`:**
-   - Thêm 5 test case toàn diện, kiểm thử toàn bộ factory, tích hợp pipeline imblearn, và ghi nhận MLflow đúng định dạng.
+   - Thêm 5 test case, kiểm thử toàn bộ factory, tích hợp pipeline imblearn, và ghi nhận MLflow đúng định dạng.
 
 ---
 
@@ -81,6 +83,6 @@ Tất cả các mô hình được đánh giá trên cùng tập Train 18.000 m�
 
 1. **Lựa chọn 2 mô hình tốt nhất để Tuning bằng Optuna (Tuần 2 – T4):**
    - **Ứng viên số 1:** `CatBoost` (AUC 0.7853) — Khả năng xử lý biến phân loại và độ ổn định tốt nhất.
-   - **Ứng viên số 2:** `LightGBM` (AUC 0.7813) — Tốc độ huấn luyện cực nhanh, AUC cao, tương thích tốt với monotonic constraints.
+   - **Ứng viên số 2:** `LightGBM` (AUC 0.7813) — Tốc độ huấn luyện nhanh, AUC cao, tương thích tốt với monotonic constraints.
 2. **Chiến lược xác suất cho Demo & XAI:**
    - Huấn luyện bản unweighted hoặc kết hợp Platt scaling trên `output_margin=True` để phục vụ giải thích SHAP tuyến tính chính xác và điểm tín dụng PDO theo chuẩn Charter.

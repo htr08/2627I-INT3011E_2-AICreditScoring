@@ -161,7 +161,7 @@ KPI chính thức được đo trên tập Test (Tuần 3 – T3); bảng sau ch
 | KS | ≥ 0.45 / 0.47 | 0.4452 | 0.4453 | Chưa đạt sàn (thiếu ~0.005) |
 | PR-AUC | ≥ 0.56 / 0.58 | 0.5675 | 0.5624 | Đạt sàn, chưa đạt mục tiêu |
 
-- **KPI tương đối** (vượt baseline Logistic có ý nghĩa thống kê): cả hai mô hình cao hơn baseline trên cả 5 fold (+0.0077 đến +0.0244). Kiểm định chính thức bằng DeLong test / bootstrap CI sẽ được thực hiện trên tập Test.
+- **KPI tương đối** (vượt baseline Logistic có ý nghĩa thống kê): cả hai mô hình cao hơn baseline trên cả 5 fold (+0.0077 đến +0.0244). Kiểm định chính thức bằng DeLong test và bootstrap CI trên tập Test: xem `test_evaluation/test_evaluation.md`.
 - KS chưa đạt mốc sàn trên CV (thiếu ~0.005), trong khi độ lệch chuẩn của KS giữa các fold là ~0.013–0.015. Theo điều kiện dừng trong Charter, tuning tiếp không được kỳ vọng cải thiện chỉ số này; các phương án thay đổi bộ đặc trưng (mục 8) cũng không cải thiện KS vượt mức nhiễu.
 
 ---
@@ -195,7 +195,7 @@ Lệnh tái lập: `python scripts/run_pipeline.py --mode tune` (khoảng 70 ph�
 ## 6. Hạn chế
 
 - **Trial mốc của CatBoost không phải tham số mặc định thực tế:** trial #0 dùng `learning_rate = 0.05`, trong khi CatBoost tự chọn 0.032 khi không khai báo. Trial #0 đạt 0.7793, thấp hơn CatBoost default thực tế (0.7844). So sánh tuned − default ở mục 3.3 sử dụng mô hình default thực tế.
-- **Đánh giá trên CV, cùng dữ liệu dùng để chọn tham số:** AUC của trial tốt nhất mang thiên lệch lạc quan nhẹ do được chọn từ 34–37 trial. Mức thiên lệch này nhỏ so với mức cải thiện quan sát được trên mọi fold, và sẽ được kiểm chứng trên Valid (Tuần 3 – T2) và Test (Tuần 3 – T3).
+- **Đánh giá trên CV, cùng dữ liệu dùng để chọn tham số:** AUC của trial tốt nhất mang thiên lệch lạc quan nhẹ do được chọn từ 34–37 trial. Mức thiên lệch này nhỏ so với mức cải thiện quan sát được trên mọi fold. Đối chiếu với Test: ROC-AUC 0.7825 so với 0.7906 ở CV, ΔAUC so với baseline vẫn có ý nghĩa thống kê (`test_evaluation/test_evaluation.md`).
 - **Một seed cho sampler và chia fold:** kết quả chưa được kiểm tra độ ổn định với seed khác.
 
 ---
@@ -204,7 +204,7 @@ Lệnh tái lập: `python scripts/run_pipeline.py --mode tune` (khoảng 70 ph�
 
 1. **Ứng viên mô hình cuối:** LightGBM + monotonic constraints (`lightgbm_monotone_tuned`) là ứng viên chính được đề xuất. AUC tương đương CatBoost (chênh lệch +0.0005, không phân biệt được), ràng buộc đơn điệu nhất quán với nghiệp vụ, thời gian huấn luyện ngắn hơn khoảng 5–25 lần và tương thích với `TreeExplainer` cho demo. CatBoost tuned (`catboost_tuned`) giữ vai trò ứng viên đối chứng. Việc chọn 1–2 mô hình cuối thuộc buổi họp review Tuần 2 (T6).
 2. **Phiên bản có SEX (Tuần 2 – T5):** phiên bản đối chiếu fairness của các ứng viên dùng lại bộ tham số tốt nhất, không tuning lại. Kết quả tại mục 9.
-3. **SHAP:** phân tích trong `03_shap.ipynb` và `03_shap_dependence.ipynb` được thực hiện trên XGBoost tham số mặc định. Cấu hình cây nông và ràng buộc đơn điệu của mô hình tuned có thể làm thay đổi dạng quan hệ đã quan sát, nên kết quả SHAP cần được tính lại trên mô hình cuối.
+3. **SHAP:** phân tích trong `03_shap.ipynb` và `03_shap_dependence.ipynb` được thực hiện trên XGBoost tham số mặc định. Cấu hình cây nông và ràng buộc đơn điệu của mô hình tuned có thể làm thay đổi dạng quan hệ đã quan sát, nên kết quả SHAP được tính lại trên mô hình cuối (`03_shap_final_model.ipynb`, `xai_report.md`).
 4. **Calibration (Tuần 3 – T2):** Platt scaling được fit trên đầu ra thô của mô hình: `raw_score=True` với LightGBM, `prediction_type="RawFormulaVal"` với CatBoost, tương ứng với `output_margin=True` trong quy ước project_plan mục 3.5e.
 5. **Bộ đặc trưng:** feature freeze v1 được giữ nguyên (mục 8); không phát sinh nhu cầu tuning lại hay tính lại SHAP do thay đổi đặc trưng.
 
@@ -214,7 +214,7 @@ Lệnh tái lập: `python scripts/run_pipeline.py --mode tune` (khoảng 70 ph�
 
 ### 8.1. Mục tiêu
 
-Kiểm tra liệu thay đổi bộ đặc trưng có cải thiện hiệu năng vượt mức của tuning hay không, làm căn cứ cho quyết định giữ hoặc điều chỉnh feature freeze v1. Các phương án được chọn theo các điểm yếu đã ghi nhận: `PAY_1`–`PAY_6` mã hoá one-hot không áp được monotonic constraints và cho dạng quan hệ không đơn điệu trong SHAP dependence; nhóm biến tương quan cao trong phân tích lọc đặc trưng của thành viên A.
+Kiểm tra liệu thay đổi bộ đặc trưng có cải thiện hiệu năng vượt mức của tuning hay không, làm căn cứ cho quyết định giữ hoặc điều chỉnh feature freeze v1. Các phương án được chọn theo các điểm yếu đã ghi nhận: `PAY_1`–`PAY_6` mã hoá one-hot không áp được monotonic constraints và cho dạng quan hệ không đơn điệu trong SHAP dependence; nhóm biến tương quan cao trong phân tích lọc đặc trưng.
 
 ### 8.2. Thiết lập
 

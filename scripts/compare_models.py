@@ -264,7 +264,7 @@ CV_MODEL_RESULTS: List[Dict] = [
         "train_time": "~14.0s",
         "interpretability": "Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ)",
         "is_main_candidate": True,
-        "note": "ỨNG VIÊN CHÍNH: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu",
+        "note": "Ứng viên chính: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu",
     },
     {
         "model_key": "catboost_tuned",
@@ -282,7 +282,7 @@ CV_MODEL_RESULTS: List[Dict] = [
         "train_time": "~66.0s",
         "interpretability": "Trung bình (SHAP TreeExplainer)",
         "is_main_candidate": True,
-        "note": "ỨNG VIÊN ĐỐI CHỨNG: AUC CV cao nhất toàn dự án (0.7911)",
+        "note": "Ứng viên đối chứng: AUC CV cao nhất toàn dự án (0.7911)",
     },
     {
         "model_key": "catboost_monotone_tuned",

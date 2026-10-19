@@ -64,7 +64,7 @@ Danh sách đầy đủ: `reports/correlation_drop.csv`. Các cặp trùng lặp
 | Lọc IV (FeatureSelectionTransformer) | 0.7790 ± 0.0083 | 0.4328 | 41.8 | 0.0000 |
 | Lọc IV + tương quan | 0.7781 ± 0.0081 | 0.4342 | 34.8 | −0.0009 |
 
-**Mô hình cây** (bộ tham số đã tuning ở T4 của thành viên B; `python scripts/run_feature_experiment.py`, chi tiết tại `reports/experiments_optuna_tuning.md` mục 8):
+**Mô hình cây** (bộ tham số đã tuning ở T4; `python scripts/run_feature_experiment.py`, chi tiết tại `reports/experiments_optuna_tuning.md` mục 8):
 
 | Cấu hình | LightGBM + monotonic | CatBoost |
 |---|---|---|
