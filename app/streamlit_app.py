@@ -64,6 +64,13 @@ def load_model():
     return MockModel(), "\n\n".join(errors)
 
 
+def markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    """Bảng Markdown; không dùng st.table/st.dataframe vì chúng cần pyarrow, không tương thích với numpy đã pin."""
+    lines = ["| " + " | ".join(headers) + " |", "|" + "|".join(["---"] * len(headers)) + "|"]
+    lines += ["| " + " | ".join(row) + " |" for row in rows]
+    return "\n".join(lines)
+
+
 def apply_profile(name: str) -> None:
     st.session_state.update(PROFILES[name])
 
@@ -178,7 +185,7 @@ def render_result(model, threshold: float) -> None:
     if exp.variable_contributions:
         with st.expander("Đóng góp theo biến (10 biến lớn nhất, điểm)"):
             top = sorted(exp.variable_contributions.items(), key=lambda kv: abs(kv[1]), reverse=True)[:10]
-            st.table({"Biến": [v for v, _ in top], "Đóng góp (điểm)": [f"{float(shap_to_points(x)):+.1f}" for _, x in top]})
+            st.markdown(markdown_table(["Biến", "Đóng góp (điểm)"], [[f"`{v}`", f"{float(shap_to_points(x)):+.1f}"] for v, x in top]))
 
     with st.expander("Chi tiết kỹ thuật"):
         st.write(f"Điểm nền {start:.1f} + tổng đóng góp {end - start:+.1f} = {end:.1f} (trước khi clip {SCORE_CLIP[0]}–{SCORE_CLIP[1]}).")
@@ -220,7 +227,7 @@ def main() -> None:
         threshold = DEFAULT_THRESHOLD
         if getattr(model, "is_final", False):
             st.header("Phân tầng rủi ro")
-            st.table({"Mức": [t.label for t in TIERS], "Hành động": [t.action for t in TIERS]})
+            st.markdown(markdown_table(["Mức", "Hành động"], [[t.label, t.action] for t in TIERS]))
         else:
             st.header("Ngưỡng")
             threshold = st.slider("Ngưỡng cảnh báo PD", 0.05, 0.80, DEFAULT_THRESHOLD, 0.01)
