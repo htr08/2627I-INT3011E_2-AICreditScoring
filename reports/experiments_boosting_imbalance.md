@@ -23,7 +23,7 @@ Tất cả các mô hình được đánh giá trên cùng tập Train 18.000 m�
 |---|---|---|---|---|---|---|---|---|
 | **Baseline** | Logistic Regression (`logreg_baseline`) | 0.7745 ± 0.0116 | 0.4282 | 0.5490 | 0.1354 | 0.3235 | 0.6728 | 0.4369 |
 | | Decision Tree, max_depth=5 (`dt_baseline`) | 0.7672 ± 0.0120 | 0.4162 | 0.5345 | 0.1367 | 0.3541 | 0.6385 | 0.4555 |
-| **Scorecard**| Logistic Scorecard WoE | 0.7809 | – | – | – | – | – | – |
+| **Scorecard**| Logistic Scorecard WoE ¹ | 0.7790 ± 0.0083 | 0.4326 | 0.5580 | 0.1351 | 0.3744 | 0.6596 | 0.4777 |
 | **Tree Ensembles (T2)**| Random Forest (`rf_default`) | 0.7667 ± 0.0097 | 0.4107 | 0.5333 | 0.1388 | 0.3644 | 0.6321 | 0.4624 |
 | | XGBoost (`xgboost_default`) | 0.7597 ± 0.0073 | 0.4007 | 0.5195 | 0.1440 | 0.3601 | 0.6120 | 0.4531 |
 | **Gradient Boosting (T3)**| **LightGBM Default** (`lightgbm_default`) | **0.7813 ± 0.0064** | **0.4276** | **0.5626** | **0.1350** | 0.3767 | 0.6677 | 0.4816 |
@@ -33,12 +33,14 @@ Tất cả các mô hình được đánh giá trên cùng tập Train 18.000 m�
 | **SMOTE In-Fold (T3)**| LightGBM + SMOTE (`lightgbm_smote`) | 0.7776 ± 0.0058 | 0.4216 | 0.5551 | 0.1383 | 0.4309 | 0.6222 | 0.5092 |
 | | CatBoost + SMOTE (`catboost_smote`) | 0.7747 ± 0.0057 | 0.4192 | 0.5493 | 0.1386 | 0.4156 | 0.6130 | 0.4953 |
 
+¹ Cập nhật theo bản Scorecard chính thức (ràng buộc dấu + coarse classing, số liệu từ MLflow). Số 0.7809 ghi ở thời điểm T3 là của cấu hình LR 5 bin trước khi chốt.
+
 ---
 
 ## 3. Phân tích Chi tiết và Đánh giá Chuyên môn
 
 ### 3.1. Hiệu năng vượt trội của CatBoost và LightGBM
-- **CatBoost Default thiết lập kỷ lục mới:** Đạt ROC-AUC **0.7853 ± 0.0077** và KS **0.4359**, trở thành mô hình có năng lực phân tách rủi ro cao nhất toàn bộ dự án tới thời điểm này, vượt qua Logistic Scorecard WoE (0.7809) và baseline Logistic Regression (0.7745).
+- **CatBoost Default thiết lập kỷ lục mới:** Đạt ROC-AUC **0.7853 ± 0.0077** và KS **0.4359**, trở thành mô hình có năng lực phân tách rủi ro cao nhất toàn bộ dự án tới thời điểm này, vượt qua Logistic Scorecard WoE (0.7790) và baseline Logistic Regression (0.7745).
 - **Vượt mốc sàn KPI Charter:** Cả CatBoost (0.7853) và LightGBM (0.7813) đều vượt mốc sàn ROC-AUC $\ge 0.78$ ngay từ bộ tham số mặc định trước khi tuning.
 - **Brier Score tối ưu:** CatBoost Default đạt Brier score thấp nhất (0.1342), cho thấy độ chính xác dự báo xác suất thô tốt hơn so với baseline và XGBoost.
 

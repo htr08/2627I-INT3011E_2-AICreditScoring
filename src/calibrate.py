@@ -45,6 +45,9 @@ from src.scoring import (
     shap_to_points,
 )
 
+DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "final_model.pkl"
+
+
 
 # ---------------------------------------------------------------------------
 # 1. Trích xuất Margin (Raw Log-Odds)
@@ -619,6 +622,34 @@ class CalibratedPipeline(BaseEstimator, ClassifierMixin):
 
 
 # ---------------------------------------------------------------------------
+# 6b. Lưu / nạp CalibratedPipeline cho demo
+# ---------------------------------------------------------------------------
+
+def save_calibrated_pipeline(pipeline: "CalibratedPipeline", path: Union[str, Path] = DEFAULT_MODEL_PATH) -> Path:
+    """Lưu CalibratedPipeline (pipeline gốc + calibrator + ngưỡng + tham số PDO) ra file joblib.
+
+    Đường dẫn mặc định `models/final_model.pkl` là ngoại lệ được commit theo project_plan.md mục 8.1.
+    Nạp lại bằng `load_calibrated_pipeline`; cần cùng phiên bản thư viện trong requirements.txt.
+    """
+    import joblib
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipeline, path)
+    return path
+
+
+def load_calibrated_pipeline(path: Union[str, Path] = DEFAULT_MODEL_PATH) -> "CalibratedPipeline":
+    """Nạp CalibratedPipeline đã lưu bởi `save_calibrated_pipeline`."""
+    import joblib
+
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Chưa có mô hình tại '{path}'. Chạy: python scripts/run_pipeline.py --mode calibrate")
+    return joblib.load(path)
+
+
+# ---------------------------------------------------------------------------
 # 7. Hàm hỗ trợ chạy toàn bộ quy trình Hiệu chuẩn & Phân tích (Runner)
 # ---------------------------------------------------------------------------
 
@@ -627,6 +658,8 @@ def run_calibration_experiments(
     include_baseline: bool = True,
     save_figures: bool = True,
     reports_dir: Optional[Path] = None,
+    save_model: bool = True,
+    model_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Chạy toàn bộ thí nghiệm hiệu chuẩn, chọn ngưỡng tối ưu và quy đổi PDO trên tập Valid.
 
@@ -759,6 +792,14 @@ def run_calibration_experiments(
 
     if save_figures:
         _plot_calibration_figures(experiments, fig_dir, y_val)
+
+    if save_model and experiments:
+        # Ứng viên chính theo week2_review.md; ngưỡng lưu kèm là ngưỡng tối ưu in-sample trên Valid,
+        # chưa phải ngưỡng cuối cùng của nhóm (xem reports/calibration_threshold.md mục 4–5).
+        primary = "lightgbm_monotone" if "lightgbm_monotone" in experiments else next(iter(experiments))
+        save_calibrated_pipeline(
+            experiments[primary]["scoring"]["calibrated_pipeline"], model_path or DEFAULT_MODEL_PATH
+        )
 
     return experiments
 

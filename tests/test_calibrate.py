@@ -14,9 +14,12 @@ from src.calibrate import (
     CalibratedPipeline,
     IsotonicCalibrator,
     PlattCalibrator,
+    compare_calibrations_on_valid,
     compute_ece,
     evaluate_calibration,
+    load_calibrated_pipeline,
     predict_margin,
+    save_calibrated_pipeline,
 )
 from src.features import build_features
 from src.pipelines import make_pipeline
@@ -205,3 +208,79 @@ def test_calibrated_pipeline_isotonic(sample_credit_data):
     proba = cal_pipe.predict_proba(X_val)
     assert proba.shape == (len(X_val), 2)
     assert 0.0 <= proba.min() and proba.max() <= 1.0
+
+
+
+# ---------------------------------------------------------------------------
+# 8. Đánh giá out-of-fold trên Valid và lưu mô hình
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def fitted_base_and_valid(sample_credit_data):
+    X, y = sample_credit_data
+    split = len(X) // 2
+    X_tr, y_tr = X.iloc[:split], y.iloc[:split]
+    X_val, y_val = X.iloc[split:], y.iloc[split:]
+    base_pipe = make_pipeline(LogisticRegression(max_iter=300, random_state=42)).fit(X_tr, y_tr)
+    return base_pipe, X_val, y_val.to_numpy()
+
+
+def test_compare_calibrations_oof_outputs(fitted_base_and_valid):
+    base_pipe, X_val, y_val = fitted_base_and_valid
+    ead = np.abs(X_val["BILL_AMT1"].to_numpy(dtype=float))
+    result = compare_calibrations_on_valid(base_pipe, X_val, y_val, ead_for_cv=ead, cv_splits=3)
+
+    assert set(result["cv_methods"]) == {"uncalibrated", "platt", "isotonic"}
+    for name, cv in result["cv_methods"].items():
+        assert cv["y_prob"].shape == (len(y_val),)
+        assert np.all((cv["y_prob"] >= 0) & (cv["y_prob"] <= 1))
+        assert set(cv["metrics"]) == {"brier_score", "log_loss", "roc_auc", "ece"}
+        assert len(cv["fold_metrics"]) == 3
+
+    # Platt đơn điệu (a > 0) nên AUC từng fold không đổi so với xác suất thô
+    assert result["cv_methods"]["platt"]["metrics"]["roc_auc"] == pytest.approx(
+        result["cv_methods"]["uncalibrated"]["metrics"]["roc_auc"]
+    )
+    for weighting in ("cv_cost", "cv_cost_ead"):
+        for method in ("platt", "isotonic"):
+            cost = result[weighting][method]
+            assert len(cost["folds"]) == 3
+            assert 0.01 <= cost["threshold_mean"] <= 0.99
+            assert cost["heldout_cost_mean"] > 0
+
+
+def test_compare_calibrations_oof_is_reproducible(fitted_base_and_valid):
+    base_pipe, X_val, y_val = fitted_base_and_valid
+    a = compare_calibrations_on_valid(base_pipe, X_val, y_val, cv_splits=3)
+    b = compare_calibrations_on_valid(base_pipe, X_val, y_val, cv_splits=3)
+    np.testing.assert_array_equal(a["cv_methods"]["platt"]["y_prob"], b["cv_methods"]["platt"]["y_prob"])
+    assert a["cv_cost"]["platt"]["threshold_mean"] == b["cv_cost"]["platt"]["threshold_mean"]
+    assert a["cv_cost_ead"] == {}  # không truyền ead_for_cv thì không có bảng EAD
+
+
+def test_compare_calibrations_oof_rejects_bad_arguments(fitted_base_and_valid):
+    base_pipe, X_val, y_val = fitted_base_and_valid
+    with pytest.raises(ValueError, match="cv_splits"):
+        compare_calibrations_on_valid(base_pipe, X_val, y_val, cv_splits=1)
+    with pytest.raises(ValueError, match="ead_for_cv"):
+        compare_calibrations_on_valid(base_pipe, X_val, y_val, ead_for_cv=np.ones(len(y_val) - 1))
+
+
+def test_save_and_load_calibrated_pipeline_roundtrip(fitted_base_and_valid, tmp_path):
+    base_pipe, X_val, y_val = fitted_base_and_valid
+    cal_pipe = CalibratedPipeline(base_pipe, method="platt")
+    cal_pipe.fit_calibrator(X_val, y_val, optimize_thresh=True)
+
+    path = save_calibrated_pipeline(cal_pipe, tmp_path / "models" / "final_model.pkl")
+    assert path.exists()
+
+    loaded = load_calibrated_pipeline(path)
+    np.testing.assert_allclose(loaded.predict_proba(X_val), cal_pipe.predict_proba(X_val))
+    np.testing.assert_allclose(loaded.predict_score(X_val), cal_pipe.predict_score(X_val))
+    assert loaded.threshold == cal_pipe.threshold
+    assert loaded.platt_a_ == cal_pipe.platt_a_ and loaded.platt_b_ == cal_pipe.platt_b_
+
+
+def test_load_calibrated_pipeline_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError, match="--mode calibrate"):
+        load_calibrated_pipeline(tmp_path / "missing.pkl")

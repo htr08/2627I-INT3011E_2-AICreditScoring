@@ -9,10 +9,11 @@ Usage:
     python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
     python scripts/run_pipeline.py --mode scorecard   # Logistic Scorecard (WoE): 5-fold CV + MLflow + bảng điểm
     python scripts/run_pipeline.py --mode scorecard --feature-selection   # Thí nghiệm lọc IV + tương quan
+    python scripts/run_pipeline.py --mode compare     # So sánh Logistic Scorecard vs Black-box (XGBoost, LGBM, CatBoost, RF)
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
     python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
-    python scripts/run_pipeline.py --mode compare   # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
+    python scripts/run_pipeline.py --mode summary     # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
 """
 
 import argparse
@@ -52,6 +53,7 @@ from src.pipelines import (
     SCORECARD_IV_THRESHOLD,
     SCORECARD_CORRELATION_THRESHOLD,
     SCORECARD_N_BINS,
+    build_blackbox_pipeline,
     build_feature_frame_pipeline,
     build_scorecard_pipeline,
 )
@@ -76,8 +78,6 @@ def run_woe_pipeline(write_freeze: bool = False):
     X_train, y_train = build_features(train_df)
     print("Train:", X_train.shape)
 
-    # IV theo cấu hình T3 (5 bin phân vị, mỗi giá trị rời rạc một bin) để khớp feature freeze v1;
-    # scorecard chính thức dùng coarse classing nên IV của nó khác bảng này.
     pipeline = build_scorecard_pipeline(coarse_classing=False).fit(X_train, y_train)
     woe = pipeline.named_steps["woe_iv"]
     iv_sorted = sorted(woe.iv_values_.items(), key=lambda x: x[1], reverse=True)
@@ -123,7 +123,7 @@ def write_feature_stability_reports(X_train, y_train):
     }
     for name, df in outputs.items():
         df.to_csv(reports_dir / name, index=False, float_format="%.6f")
-    print("\nWrote " +", ".join(f"reports/{name}" for name in outputs))
+    print("\nWrote " + ", ".join(f"reports/{name}" for name in outputs))
 
 
 def write_feature_freeze(iv_sorted, selected):
@@ -160,13 +160,129 @@ def write_feature_freeze(iv_sorted, selected):
     print(f"\nWrote {FREEZE_PATH.relative_to(PROJECT_ROOT)}")
 
 
+def run_compare_pipeline(include_sex: bool = False):
+    """Chạy 5-fold CV so sánh trực tiếp Logistic Scorecard (WoE) với các mô hình Black-box (XGBoost, LightGBM, CatBoost, RF)."""
+    import numpy as np
+    from sklearn.model_selection import StratifiedKFold
+    from src.scoring import evaluate_model_metrics
+
+    train_df, _, _ = load_split_data()
+    X_train, y_train = build_features(train_df)
+
+    # 1. Bổ sung CatBoost vào danh sách mô hình đánh giá
+    models = {
+        "XGBoost (Black-box)": build_blackbox_pipeline("xgboost", include_sex=include_sex),
+        "LightGBM (Black-box)": build_blackbox_pipeline("lightgbm", include_sex=include_sex),
+        "CatBoost (Black-box)": build_blackbox_pipeline("catboost", include_sex=include_sex),
+        "Random Forest (Black-box)": build_blackbox_pipeline("rf", include_sex=include_sex),
+        "Logistic Scorecard (WoE)": build_scorecard_pipeline(drop_sensitive=not include_sex),
+    }
+
+    print("\n" + "=" * 65)
+    print("=== BẮT ĐẦU SO SÁNH LOGISTIC SCORECARD VS BLACK-BOX (5-FOLD CV) ===")
+    print("=" * 65)
+
+    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+    final_results = []
+
+    for name, pipeline in models.items():
+        auc_list, gini_list, ks_list = [], [], []
+        print(f"\n---> Huấn luyện mô hình: {name}")
+
+        for fold, (train_idx, val_idx) in enumerate(skf.split(X_train, y_train), 1):
+            X_tr, y_tr = X_train.iloc[train_idx], y_train.iloc[train_idx]
+            X_va, y_va = X_train.iloc[val_idx], y_train.iloc[val_idx]
+
+            pipeline.fit(X_tr, y_tr)
+            y_prob = pipeline.predict_proba(X_va)[:, 1]
+
+            metrics = evaluate_model_metrics(y_va, y_prob)
+            auc_list.append(metrics["AUC"])
+            gini_list.append(metrics["Gini"])
+            ks_list.append(metrics["KS"])
+            print(f"  Fold {fold}: AUC={metrics['AUC']:.4f} | KS={metrics['KS']:.4f} | Gini={metrics['Gini']:.4f}")
+
+        final_results.append({
+            "Model": name,
+            "Mean AUC": round(float(np.mean(auc_list)), 4),
+            "Std AUC": round(float(np.std(auc_list)), 4),
+            "Mean Gini": round(float(np.mean(gini_list)), 4),
+            "Mean KS": round(float(np.mean(ks_list)), 4),
+        })
+
+    df_res = pd.DataFrame(final_results)
+    print("\n" + "=" * 65)
+    print("=== KẾT QUẢ SO SÁNH TỔNG HỢP MÔ HÌNH ===")
+    print("=" * 65)
+    print(df_res.to_string(index=False))
+
+    # Lưu báo cáo vào thư mục reports/
+    reports_dir = PROJECT_ROOT / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+
+    csv_path = reports_dir / "scorecard_vs_blackbox_comparison.csv"
+    md_path = reports_dir / "scorecard_vs_blackbox_comparison.md"
+
+    df_res.to_csv(csv_path, index=False)
+
+    # 2. Báo cáo Markdown: bảng dựng tay (không phụ thuộc tabulate), số liệu lấy từ df_res
+    table_md = "\n".join(
+        [
+            "| Mô hình | AUC (mean ± std) | Gini | KS |",
+            "| :--- | :--- | :--- | :--- |",
+        ]
+        + [
+            f"| {r['Model']} | {r['Mean AUC']:.4f} ± {r['Std AUC']:.4f} | {r['Mean Gini']:.4f} | {r['Mean KS']:.4f} |"
+            for _, r in df_res.iterrows()
+        ]
+    )
+    auc = df_res.set_index("Model")["Mean AUC"]
+    # AUC CV của mô hình tham số mặc định, lấy từ reports/experiments_boosting_imbalance.md (cùng 5 fold)
+    default_auc = {"XGBoost": 0.7597, "LightGBM": 0.7813, "CatBoost": 0.7853, "Random Forest": 0.7667}
+
+    md_content = f"""# Báo cáo So sánh Logistic Scorecard (WoE) vs. Black-box Models
+
+Kết quả sơ bộ trên 5-fold Stratified CV (tập Train, random_state=42, feature freeze v1). Kết quả các mô hình tham số mặc định và sau tuning: `experiments_boosting_imbalance.md`, `experiments_optuna_tuning.md`.
+
+## 1. Kết quả Đánh giá
+
+{table_md}
+
+## 2. Cấu hình Hyperparameters của các Mô hình Black-box
+
+Các mô hình black-box dùng bộ tham số cố định (cây nông, learning rate thấp), khác với cấu hình mặc định của thư viện và với bộ tham số tối ưu bằng Optuna.
+
+| Mô hình | Tham số cấu hình chính (Key Hyperparameters) |
+| :--- | :--- |
+| **XGBoost** | `n_estimators=100`, `max_depth=4`, `learning_rate=0.05`, `random_state=42` |
+| **LightGBM** | `n_estimators=100`, `max_depth=4`, `learning_rate=0.05`, `random_state=42` |
+| **CatBoost** | `iterations=100`, `depth=4`, `learning_rate=0.05`, `random_seed=42` |
+| **Random Forest** | `n_estimators=100`, `max_depth=6`, `random_state=42` |
+
+## 3. Đối chiếu với kết quả mô hình tham số mặc định
+
+| Mô hình | AUC báo cáo này | AUC tham số mặc định |
+| :--- | :--- | :--- |
+| XGBoost | {auc['XGBoost (Black-box)']:.4f} | {default_auc['XGBoost']:.4f} |
+| LightGBM | {auc['LightGBM (Black-box)']:.4f} | {default_auc['LightGBM']:.4f} |
+| CatBoost | {auc['CatBoost (Black-box)']:.4f} | {default_auc['CatBoost']:.4f} |
+| Random Forest | {auc['Random Forest (Black-box)']:.4f} | {default_auc['Random Forest']:.4f} |
+
+Chênh lệch AUC xuất phát từ cấu hình tham số: các mô hình mặc định dùng default thư viện (XGBoost `learning_rate=0.3`, cây sâu hơn; RF không giới hạn độ sâu), còn cấu hình trong báo cáo này dùng `max_depth=4`, `learning_rate=0.05` (RF `max_depth=6`). Hai bảng ứng với hai cấu hình khác nhau nên không thể so trực tiếp. Kết quả sau tuning Optuna: `experiments_optuna_tuning.md`.
+"""
+
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(md_content)
+
+    print(f"\n[INFO] Đã xuất báo cáo tại:\n  - {csv_path.relative_to(PROJECT_ROOT)}\n  - {md_path.relative_to(PROJECT_ROOT)}")
+
 def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "tune", "tuned", "compare", "calibrate"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "summary", "tune", "tuned", "calibrate"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'tune' (Optuna), 'tuned' (huấn luyện lại mô hình đã tuning), 'compare' (bảng so sánh sơ bộ), or 'calibrate' (hiệu chuẩn & chọn ngưỡng chi phí)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'summary' (bảng so sánh sơ bộ các mô hình), 'tune' (Optuna) 'tuned' (huấn luyện lại mô hình đã tuning) or 'calibrate' (hiệu chuẩn & chọn ngưỡng chi phí)",
     )
     parser.add_argument(
         "--include-sex",
@@ -199,14 +315,16 @@ def main():
         datefmt="%H:%M:%S",
     )
 
-    if args.mode == "compare":
-        from scripts.compare_models import main as compare_main
-
-        compare_main()
-    elif args.mode == "woe":
+    if args.mode == "woe":
         run_woe_pipeline(write_freeze=args.freeze)
     elif args.mode == "scorecard":
         train_scorecard(include_sex=args.include_sex, enable_feature_selection=args.feature_selection)
+    elif args.mode == "compare":
+        run_compare_pipeline(include_sex=args.include_sex)
+    elif args.mode == "summary":
+        from scripts.compare_models import main as summary_main
+
+        summary_main()
     elif args.mode == "tuned":
         train_tuned(include_sex=args.include_sex)
     elif args.mode == "tune":

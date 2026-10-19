@@ -30,7 +30,6 @@ def test_build_summary_table_df():
         "KS",
         "PR-AUC",
         "Brier (thô)",
-        "Thời gian train",
         "Khả năng giải thích",
     ]
     assert list(df.columns) == expected_cols

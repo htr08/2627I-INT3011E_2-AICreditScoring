@@ -201,8 +201,6 @@ PD trung bình của các hồ sơ Valid cần được tính trực tiếp từ
 
 Ngưỡng 0.11 gắn cờ **64,72%** hồ sơ trong kết quả in-sample, trong khi precision chỉ **30,49%**. Đây là đánh đổi theo chi phí FN/FP giả định; tỷ lệ cảnh báo cao cần được đối chiếu với năng lực xử lý và chính sách can thiệp. Không nên coi đây là khuyến nghị vận hành trước khi có kết quả OOF/Test và xác nhận sức chứa của quy trình nghiệp vụ.
 
-Đánh giá cuối theo ngưỡng đã khóa 0.09 trên Test cho flag rate **72,98%**, precision **28,02%**, recall **92,46%**; EAD-weighted cost là **NT$1.634,49/khách hàng** so với NT$2.830,29 tại ngưỡng 0.50. Kết quả này chỉ dùng báo cáo nghiệm thu, không dùng để điều chỉnh ngưỡng. Xem [báo cáo Test](test_evaluation/test_evaluation.md).
-
 ---
 
 ## 7. Kết luận và Bàn giao Tiến độ
@@ -212,13 +210,13 @@ Ngưỡng 0.11 gắn cờ **64,72%** hồ sơ trong kết quả in-sample, trong
    - Thêm phương thức `decision_function` cho `SignConstrainedLogisticRegression` trong `src/pipelines.py` bảo đảm tính tương thích đồng bộ.
    - Bổ sung cấu hình `calibration`, `cost_matrix`, `scoring` chuẩn hóa vào `configs/config.yaml`.
    - Xây dựng thành công notebook tương tác `notebooks/04_calibration_threshold.ipynb` tái hiện toàn bộ chu trình.
-   - Có bộ kiểm thử cho calibrator và CLI; cần chạy lại kiểm thử sau các thay đổi review.
+   - Có bộ kiểm thử cho calibrator, đánh giá OOF, lưu/nạp mô hình và CLI (`tests/test_calibrate.py`, `tests/test_run_pipeline.py`).
    - Tích hợp cờ `--mode calibrate` vào `scripts/run_pipeline.py`.
 2. **Quyết định Kỹ thuật then chốt:**
    - OOF chưa cho thấy Platt hoặc Isotonic cải thiện Brier so với xác suất thô. Nếu vẫn cần hiệu chuẩn để hỗ trợ diễn giải SHAP, Platt là phương án giữ được tính cộng tính nhưng phải chấp nhận rằng lợi ích PD chưa được chứng minh.
    - **Tham số Platt Scaling:** $a = 1.0129$, $b = 0.0367$.
    - **Ngưỡng 0.11 và cutoff 547.5** hiện chỉ là kết quả chọn/đo in-sample trên Valid, chưa được chốt làm ngưỡng chính thức. Vùng ứng viên cần xem xét là 0.09–0.13 và phải xác nhận lại bằng CV/Test.
    - Mức giảm chi phí 48,66% và Recall 89,22% cũng là số in-sample; không diễn giải như hiệu quả ngoài mẫu.
-3. **Nghiệm thu Tuần 3 – T3:**
-   - Đã chạy Test một lần; LightGBM Platt đạt ROC-AUC 0.7825 (bootstrap 95% CI 0.7681–0.7973), cao hơn baseline Logistic 0.7609; DeLong p = 1.86 × 10⁻⁹.
-   - Bàn giao `CalibratedPipeline` và kết quả Test cho tích hợp demo; giữ nguyên ngưỡng/calibrator đã khóa trước Test.
+3. **Kế hoạch tiếp theo (Tuần 3 – T3):**
+   - Chạy nghiệm thu cuối cùng trên tập Test (duy nhất 1 lần) để hoàn thiện bảng so sánh và báo cáo tổng kết.
+   - Bàn giao `CalibratedPipeline` và các ngưỡng phân tầng cho Thành viên C tích hợp vào giao diện demo Streamlit. `--mode calibrate` lưu mô hình (ứng viên chính, Platt, ngưỡng tối ưu in-sample trên Valid) tại `models/final_model.pkl`; nạp bằng `src.calibrate.load_calibrated_pipeline`. Ngưỡng lưu kèm chưa phải ngưỡng cuối cùng của nhóm.
