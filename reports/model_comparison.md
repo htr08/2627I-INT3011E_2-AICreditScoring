@@ -189,11 +189,11 @@ Thành viên B (ML Engineer) đề xuất với nhóm tại cuộc họp Review 
 
 ## 8. Lệnh Tái lập & Kiểm thử
 
-Để hiển thị lại bảng so sánh sơ bộ hoặc xuất lại báo cáo:
+Bảng máy đọc `reports/model_comparison.csv` và các bảng so sánh, kiểm định cặp, đối chiếu KPI (in ra console) được sinh bằng:
 ```bash
 python scripts/compare_models.py
 # hoặc
 python scripts/run_pipeline.py --mode summary
 ```
 
-File dữ liệu máy đọc (machine-readable) được lưu tại: `reports/model_comparison.csv`.
+Lệnh này chỉ ghi `reports/model_comparison.csv`; báo cáo này được viết tay (gồm kết quả Test ở mục 2.1) nên script không ghi đè. Kết quả Test lấy từ `scripts/evaluate_final_test.py`, đã chạy một lần (xem `reports/test_evaluation/`).
