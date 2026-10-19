@@ -91,7 +91,7 @@ Theo quy ước kỹ thuật tại `project_plan.md` mục 3.5e:
 - Brier OOF của Isotonic cũng cao hơn xác suất thô trên cả ba ứng viên; mức thấp 0.13190 trong bảng in-sample là lạc quan do fit/đo cùng Valid.
 - Platt với $a > 0$ giữ thứ hạng trong mỗi fold và AUC trung bình bằng raw đến độ chính xác hiển thị; đó là tính chất đơn điệu, không đồng nghĩa hiệu chuẩn tốt hơn.
 
-![Biểu đồ đường cong hiệu chuẩn (Reliability Diagrams)](figures/calibration_curves.png)
+Biểu đồ đường cong hiệu chuẩn (reliability diagram) được sinh bằng `python scripts/run_pipeline.py --mode calibrate` tại `reports/figures/calibration_curves.png` (thư mục `reports/figures/` không commit).
 
 ---
 
@@ -136,7 +136,7 @@ Ngưỡng unit-cost OOF của Platt trung bình 0.122 (SD 0.013), phù hợp v�
   - EAD dùng `BILL_AMT1` theo đơn vị tiền gốc của bộ dữ liệu UCI, **NT$ (TWD)**; số tiền trong báo cáo được ghi theo NT$/khách hàng.
   - Các con số chi phí và mức chênh giữa ngưỡng 0.08, 0.11 và 0.50 đều là in-sample; chưa đủ cơ sở để kết luận ngưỡng 0.11 vững.
 
-![Đường cong Chi phí Kỳ vọng theo Ngưỡng](figures/cost_curves.png)
+Đường cong chi phí kỳ vọng theo ngưỡng được sinh cùng lệnh tại `reports/figures/cost_curves.png`. Vùng chi phí thấp nhất khá phẳng quanh 0.09–0.13, nên ngưỡng in-sample tối ưu thay đổi theo lần chạy và môi trường (phù hợp nhận định ở mục 4.3).
 
 ### 4.5. Ngưỡng vận hành đã khóa
 
@@ -202,7 +202,7 @@ Kết quả in-sample áp dụng trên ứng viên `LightGBM tuned + Monotonic` 
 | **Cutoff theo ngưỡng vận hành đã khóa ($p^* = 0.09$)** | **553.9 điểm** | Ranh giới giữa nhóm không bị gắn cờ và nhóm bị gắn cờ (mục 6.3) |
 | Cutoff theo ngưỡng in-sample ($p^* = 0.11$) | 547.5 điểm | Chỉ để đối chiếu, không dùng để phân tầng |
 
-![Phân phối Điểm Tín dụng PDO](figures/score_distribution.png)
+Phân phối điểm tín dụng trên Valid được sinh cùng lệnh tại `reports/figures/score_distribution.png`.
 
 PD trung bình của các hồ sơ Valid cần được tính trực tiếp từ `scores`/xác suất hiệu chuẩn, không suy ra từ điểm trung bình. Báo cáo hiện ghi tỷ lệ vỡ nợ thực tế Valid là **22,12%**; nếu nêu PD trung bình dự đoán, hãy ghi riêng giá trị được tính trực tiếp và phân biệt với tỷ lệ thực tế.
 
