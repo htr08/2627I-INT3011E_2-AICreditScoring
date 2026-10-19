@@ -80,6 +80,16 @@ def test_run_pipeline_cli_compare_keeps_scorecard_vs_blackbox(monkeypatch):
     mock_summary.assert_not_called()
 
 
+def test_run_pipeline_cli_dispatch_final_model(monkeypatch):
+    """--mode final-model gọi export_final_model."""
+    mock_export = MagicMock(return_value="models/final_model.pkl")
+    monkeypatch.setattr("src.calibrate.export_final_model", mock_export)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "final-model"])
+
+    main()
+    mock_export.assert_called_once()
+
+
 def test_run_pipeline_cli_dispatch_calibrate(monkeypatch):
     """--mode calibrate gọi run_calibration_experiments."""
     mock_cal = MagicMock()

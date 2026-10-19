@@ -14,6 +14,7 @@ Usage:
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
     python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
     python scripts/run_pipeline.py --mode summary     # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
+    python scripts/run_pipeline.py --mode final-model # Lưu models/final_model.pkl (Platt + ngưỡng đã khóa), không đụng Test
 """
 
 import argparse
@@ -280,9 +281,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "summary", "tune", "tuned", "calibrate"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "summary", "tune", "tuned", "calibrate", "final-model"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'summary' (bảng so sánh sơ bộ các mô hình), 'tune' (Optuna) 'tuned' (huấn luyện lại mô hình đã tuning) or 'calibrate' (hiệu chuẩn & chọn ngưỡng chi phí)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'summary' (bảng so sánh sơ bộ các mô hình), 'tune' (Optuna) 'tuned' (huấn luyện lại mô hình đã tuning), 'calibrate' (hiệu chuẩn & chọn ngưỡng chi phí) or 'final-model' (lưu models/final_model.pkl với ngưỡng đã khóa)",
     )
     parser.add_argument(
         "--include-sex",
@@ -341,6 +342,12 @@ def main():
             "Hoàn tất hiệu chuẩn; OOF metrics/cost được lưu ở reports/calibration_cv_metrics.csv "
             "và reports/calibration_cv_cost.csv; biểu đồ ở reports/figures/."
         )
+    elif args.mode == "final-model":
+        from src.calibrate import export_final_model
+
+        logging.info("Huấn luyện mô hình cuối trên Train, calibrate Platt trên Valid, lưu cùng ngưỡng đã khóa...")
+        path = export_final_model()
+        logging.info("Đã lưu mô hình cuối tại %s", path)
     else:
         if args.mode in ("baseline", "all"):
             train_baseline(include_sex=args.include_sex)

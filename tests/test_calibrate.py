@@ -14,10 +14,13 @@ from src.calibrate import (
     CalibratedPipeline,
     IsotonicCalibrator,
     PlattCalibrator,
+    build_final_model,
     compare_calibrations_on_valid,
     compute_ece,
     evaluate_calibration,
+    export_final_model,
     load_calibrated_pipeline,
+    locked_threshold,
     predict_margin,
     save_calibrated_pipeline,
 )
@@ -284,3 +287,58 @@ def test_save_and_load_calibrated_pipeline_roundtrip(fitted_base_and_valid, tmp_
 def test_load_calibrated_pipeline_missing_file(tmp_path):
     with pytest.raises(FileNotFoundError, match="--mode calibrate"):
         load_calibrated_pipeline(tmp_path / "missing.pkl")
+
+
+# ---------------------------------------------------------------------------
+# 9. Mô hình cuối với ngưỡng đã khóa
+# ---------------------------------------------------------------------------
+
+def _fake_fit_tuned_pipeline(study, X, y, include_sex=False):
+    return make_pipeline(LogisticRegression(max_iter=300, random_state=42)).fit(X, y)
+
+
+def test_locked_threshold_reads_config():
+    assert locked_threshold({"calibration": {"threshold": 0.09}}) == 0.09
+    assert locked_threshold({"calibration": {}}) is None
+    assert locked_threshold({}) is None
+    assert locked_threshold() == 0.09  # configs/config.yaml
+
+
+def test_build_final_model_uses_locked_threshold_without_optimising(sample_credit_data, monkeypatch):
+    monkeypatch.setattr("src.tune.fit_tuned_pipeline", _fake_fit_tuned_pipeline)
+    X, y = sample_credit_data
+    half = len(X) // 2
+    config = {"calibration": {"threshold": 0.07}, "scoring": {"base_score": 600, "base_odds": 50, "pdo": 20}}
+
+    final = build_final_model(X.iloc[:half], y.iloc[:half], X.iloc[half:], y.iloc[half:], config=config)
+
+    assert final.threshold == 0.07  # ngưỡng cấu hình, không phải ngưỡng tối ưu in-sample
+    assert final.optimal_threshold_ is None
+    assert final.method == "platt" and final.platt_a_ is not None
+    proba = final.predict_proba(X.iloc[half:])
+    assert proba.shape == (len(X) - half, 2)
+
+
+def test_build_final_model_requires_configured_threshold(sample_credit_data, monkeypatch):
+    monkeypatch.setattr("src.tune.fit_tuned_pipeline", _fake_fit_tuned_pipeline)
+    X, y = sample_credit_data
+    with pytest.raises(ValueError, match="calibration.threshold"):
+        build_final_model(X, y, X, y, config={"calibration": {}})
+
+
+def test_export_final_model_saves_locked_threshold_and_ignores_test(tmp_path, monkeypatch):
+    df = make_raw_credit_df(n=400, seed=7)
+
+    class UnusedTest:
+        def __getattr__(self, name):  # mọi truy cập vào tập Test đều là lỗi
+            raise AssertionError("export_final_model không được dùng tập Test")
+
+    monkeypatch.setattr("src.data_split.load_split_data", lambda: (df.iloc[:240], df.iloc[240:], UnusedTest()))
+    monkeypatch.setattr("src.tune.fit_tuned_pipeline", _fake_fit_tuned_pipeline)
+
+    path = export_final_model(tmp_path / "final_model.pkl")
+
+    loaded = load_calibrated_pipeline(path)
+    assert loaded.threshold == locked_threshold()
+    X_valid, _ = build_features(df.iloc[240:])
+    assert loaded.predict_score(X_valid).shape == (160,)

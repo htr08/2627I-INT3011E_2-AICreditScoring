@@ -1,0 +1,3 @@
+﻿auc_a,auc_b,diff,z_stat,p_value,ci_lower,ci_upper,is_significant,bootstrap_ci_lower,bootstrap_ci_upper,threshold,cost_fn,cost_fp,ead_currency,bootstrap_replicates
+0.78245234,0.76094815,0.02150419,6.00944116,1.8616e-09,0.01449065,0.02851773,True,0.01434189,0.02856920,0.09000000,0.45000000,0.05000000,TWD,1000
+

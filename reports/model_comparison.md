@@ -11,7 +11,7 @@ Theo phân công nhiệm vụ tại `reports/project_plan.md` (mục 4.2 – Tu�
 2. **Tuân thủ quy ước dữ liệu (mục 3.5a & 8.2):**
    - **Tập Train (60%):** Huấn luyện và đánh giá sơ bộ qua 5-fold Stratified CV cố định `random_state = 42`.
    - **Tập Valid (20%):** Dành cho bước Probability Calibration, chọn ngưỡng chi phí và fairness check ở Tuần 3 – T2.
-   - **Tập Test (20%):** Giữ nguyên vẹn, **chỉ chạy một lần duy nhất ở Tuần 3 – T3** để báo cáo kết quả cuối cùng. Do đó, các cột đo trên tập Test trong bảng mẫu sẽ được điền ở Tuần 3.
+   - **Tập Test (20%):** Đã dùng một lần duy nhất ở Tuần 3 – T3 cho mô hình cuối và baseline Logistic; kết quả nghiệm thu ở mục 2.1. Các mô hình khác không được đánh giá trên Test trong lượt này.
 3. **Chuẩn bị cơ sở cho cuộc họp Review Tuần 2 (T6):** Cung cấp các bằng chứng thực nghiệm, kiểm định thống kê và phân tích trade-off để nhóm thống nhất lựa chọn **1–2 mô hình cuối cùng** bước vào giai đoạn hoàn thiện sản phẩm.
 
 ---
@@ -20,26 +20,42 @@ Theo phân công nhiệm vụ tại `reports/project_plan.md` (mục 4.2 – Tu�
 
 Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bảng so sánh mô hình** trong `reports/project_plan.md`:
 
-| Mô hình | AUC CV (mean ± std) | AUC Test (95% CI) | Gini | KS | PR-AUC | Brier (thô) | Khả năng giải thích |
+| Mô hình | AUC CV (mean ± std) | AUC Test (95% CI) | Gini (Test) | KS (Test) | PR-AUC (Test) | Brier (Test) | Khả năng giải thích |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | 0.7745 ± 0.0116 | Dành cho Tuần 3 – T3 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | Rất cao (hệ số odds ratio trực tiếp) |
-| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Dành cho Tuần 3 – T3 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | Cao (cây quyết định if-then rõ ràng) |
-| Logistic Scorecard (WoE) | 0.7790 ± 0.0083 | Dành cho Tuần 3 – T3 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | Rất cao (bảng điểm PDO, chuẩn ngân hàng) |
-| Random Forest (default) | 0.7667 ± 0.0097 | Dành cho Tuần 3 – T3 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | Trung bình (SHAP / Feature Importance) |
-| XGBoost (default) | 0.7597 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | Trung bình (SHAP TreeExplainer) |
-| LightGBM (default) | 0.7805 ± 0.0077 | Dành cho Tuần 3 – T3 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | Trung bình (SHAP TreeExplainer) |
-| CatBoost (default) | 0.7844 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | Trung bình (SHAP TreeExplainer) |
-| LightGBM tuned + Monotonic | 0.7906 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
-| CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | Trung bình (SHAP TreeExplainer) |
+| Logistic Regression (baseline) | 0.7745 ± 0.0116 | 0.7609 (0.7461, 0.7765) | 0.5219 | 0.4046 | 0.5236 | 0.1384 (thô) | Rất cao (hệ số odds ratio trực tiếp) |
+| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Không đánh giá | – | – | – | – | Cao (cây quyết định if-then rõ ràng) |
+| Logistic Scorecard (WoE) | 0.7790 ± 0.0083 | Không đánh giá | – | – | – | – | Rất cao (bảng điểm PDO, chuẩn ngân hàng) |
+| Random Forest (default) | 0.7667 ± 0.0097 | Không đánh giá | – | – | – | – | Trung bình (SHAP / Feature Importance) |
+| XGBoost (default) | 0.7597 ± 0.0073 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
+| LightGBM (default) | 0.7805 ± 0.0077 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
+| CatBoost (default) | 0.7844 ± 0.0074 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
+| **LightGBM tuned + Monotonic (mô hình cuối)** | 0.7906 ± 0.0074 | **0.7825 (0.7681, 0.7973)** | 0.5649 | 0.4290 | 0.5600 | 0.1348 (Platt) | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
+| CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
 | MLP (tuỳ chọn) | Chưa triển khai (tùy chọn) | – | – | – | – | – | Thấp (KernelExplainer) |
 
 > **Ghi chú kỹ thuật & Phương pháp tính:**
-> - **Chỉ số phân tách & xác suất:** Đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`).
+> - **Nguồn số liệu:** Cột AUC CV đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`). Các cột (Test) đo trên tập Test 6.000 hồ sơ, chỉ có cho mô hình cuối và baseline Logistic (mục 2.1); các mô hình còn lại không được đánh giá trên Test. Gini, KS, PR-AUC và Brier theo CV của mọi mô hình nằm ở bảng phụ (mục 3).
 > - **Ngưỡng & cách tính chỉ số (Recall, Precision, F1):** Đo tại ngưỡng cố định `threshold = 0.5` độc lập trên từng fold kiểm định (validation fold), sau đó lấy trung bình (`mean`) và độ lệch chuẩn mẫu (`std`, `ddof=1`) qua 5 fold. Cách tính này khớp hoàn toàn với quy trình `run_cv` và `summarize_folds` log vào MLflow (không gộp chung toàn bộ OOF dự đoán trước khi tính).
 > - **Lược bỏ cột thời gian train:** Cột thời gian huấn luyện đã được lược bỏ khỏi các bảng so sánh theo khuyến nghị của reviewer. Nguyên nhân: MLflow không lưu trữ đồng nhất một metric thời gian cho tất cả các mô hình và thời gian chạy wall-clock phụ thuộc cấu hình phần cứng cục bộ. Với quy mô 18.000 mẫu (mọi mô hình đều hoàn thành dưới 1 phút), thời gian train không phải là tiêu chí đánh đổi hay KPI chọn mô hình. Độ trễ suy luận (Inference Latency trên từng hồ sơ) sẽ được đo lường chuẩn xác ở Tuần 3 khi triển khai ứng dụng demo.
 > - **Thống nhất số liệu Boosting default:** Bảng chính, bảng phụ và bảng kiểm định paired t-test sử dụng đồng bộ số liệu tính trên cùng fold-cache Optuna T4 (LightGBM default: 0.7805 ± 0.0077; CatBoost default: 0.7844 ± 0.0074). Bộ số này bảo đảm khớp toán học hoàn toàn giữa chênh lệch từng fold trong bảng paired và điểm CV trung bình.
-> - **Brier score:** Brier score ở bảng trên là Brier thô (chưa qua calibration). Brier sau hiệu chuẩn sẽ được cập nhật ở Tuần 3 sau bước Platt scaling trên tập Valid.
-> - **Đóng băng tập Test:** Cột Test (ROC-AUC 95% CI, Gini Test, KS Test...) tuân thủ quy tắc đóng băng tập Test, chỉ thực hiện duy nhất 1 lần tại Tuần 3 – T3.
+> - **Brier score:** Brier Test của mô hình cuối là Brier sau Platt scaling. Brier Test của baseline là Brier thô vì baseline không được hiệu chuẩn, nên hai giá trị không hoàn toàn ngang hàng; AUC, Gini, KS và PR-AUC không phụ thuộc hiệu chuẩn. Brier CV (thô) của mọi mô hình: mục 3.
+> - **Đóng băng tập Test:** Đã chạy đúng một lượt ở Tuần 3 – T3 cho LightGBM tuned + Monotonic và baseline Logistic; xem mục 2.1. Không dùng Test để chọn giữa các mô hình phụ.
+
+### 2.1. Kết quả nghiệm thu cuối trên Test (Tuần 3 – T3)
+
+Tập Test được đánh giá một lần bằng `scripts/evaluate_final_test.py`. Mô hình cuối và ngưỡng được khóa trước khi đánh giá: LightGBM tuned + monotonic, Platt fit trên Valid, ngưỡng 0.09 (làm tròn từ trung bình OOF EAD-weighted 0.088). Lượt Test so sánh mô hình cuối với baseline Logistic Regression; các mô hình còn lại không được đưa vào lượt nghiệm thu cuối.
+
+| Mô hình/đầu ra | ROC-AUC Test (bootstrap 95% CI) | Gini | KS (bootstrap 95% CI) | PR-AUC (bootstrap 95% CI) | Brier (bootstrap 95% CI) | Log Loss | ECE |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| LightGBM tuned + Monotonic (raw) | 0.7825 (0.7681, 0.7973) | 0.5649 | 0.4290 (0.4048, 0.4603) | 0.5600 (0.5315, 0.5887) | 0.1347 (0.1288, 0.1405) | 0.4284 | 0.0139 |
+| **LightGBM tuned + Monotonic (Platt, final)** | **0.7825 (0.7681, 0.7973)** | **0.5649** | **0.4290 (0.4048, 0.4603)** | **0.5600 (0.5315, 0.5887)** | 0.1348 (0.1288, 0.1405) | 0.4285 | 0.0163 |
+| Logistic Regression baseline | 0.7609 (0.7461, 0.7765) | 0.5219 | 0.4046 (0.3771, 0.4341) | 0.5236 (0.4960, 0.5546) | 0.1384 (0.1322, 0.1446) | 0.4410 | 0.0185 |
+
+Paired DeLong cho LightGBM Platt so với Logistic baseline: **ΔAUC = 0.02150**, 95% CI **[0.01449, 0.02852]**, **p = 1.86 × 10⁻⁹**. Paired bootstrap 95% CI của ΔAUC là **[0.01434, 0.02857]**; cả hai cách đều cho thấy AUC cao hơn baseline có ý nghĩa thống kê, đáp ứng KPI chính. Platt không cải thiện calibration trên Test so với raw LightGBM (Brier 0.1348 so với 0.1347; ECE 0.0163 so với 0.0139), phù hợp với kết quả OOF; Platt vẫn được giữ cho đầu ra cuối theo lựa chọn đã khóa trên Valid để bảo toàn phép biến đổi tuyến tính cho SHAP. Brier, Log Loss và ECE của baseline tính trên PD chưa hiệu chuẩn.
+
+Đối chiếu KPI tham chiếu (Charter mục 3.2) trên Test: ROC-AUC đạt mốc sàn (0.7825 ≥ 0.78) nhưng chưa tới mục tiêu 0.79; Gini (0.5649), KS (0.4290) và PR-AUC (0.55996) dưới mốc sàn, trong đó PR-AUC thiếu 0.00004. Khoảng tin cậy 95% của cả bốn chỉ số đều chứa mốc sàn. Bảng đầy đủ nằm trong [báo cáo nghiệm thu Test](test_evaluation/test_evaluation.md).
+
+Tại ngưỡng 0.09 trên Test, recall là **92.46%**, precision **28.02%**, flag rate **72.98%**; EAD-weighted cost là **NT$1,634.49/khách hàng**, so với **NT$2,830.29** tại 0.50. Tỷ lệ cảnh báo cao cần được cân nhắc về năng lực vận hành. Chi tiết ROC/PR/calibration curves và toàn bộ chỉ số nằm trong báo cáo nghiệm thu Test, cùng các bảng máy đọc `test_evaluation/test_metrics.csv` và `test_evaluation/test_comparison.csv`.
 
 ---
 
@@ -114,11 +130,12 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
    - **Gini:** Đạt mốc sàn $\ge 0.57$ (CatBoost 0.5822, LightGBM 0.5813), tiệm cận mốc mục tiêu 0.59.
    - **PR-AUC:** Đạt mốc sàn $\ge 0.56$ (CatBoost 0.5675, LightGBM 0.5624).
    - **KS:** **Chưa đạt mốc sàn** ($0.4452–0.4453$ so với mốc sàn 0.45, thiếu khoảng ~0.005; bảng đối chiếu KPI phân loại 'Chưa đạt sàn'). Theo kết luận tuning tại Tuần 2 – T4, đây là trần tự nhiên của bộ dữ liệu snapshot 2005 trên mô hình dự đoán xác suất không leak dữ liệu.
+   - **Trên tập Test (mô hình cuối, mục 2.1):** ROC-AUC 0.7825 đạt mốc sàn, chưa tới mục tiêu; Gini 0.5649, KS 0.4290 và PR-AUC 0.55996 dưới mốc sàn. ROC-AUC CV cao hơn Test khoảng một độ lệch chuẩn (0.7906 so với 0.7825), phù hợp ghi chú ở Charter mục 3.2.
 
 3. **Kế hoạch Chi phí Kỳ vọng & Lựa chọn Ngưỡng Tối ưu (Kế hoạch Tuần 3 – T2):**
    - **Ma trận chi phí (Charter mục 1.3):** Chi phí $FN \approx 0.45 \times EAD$ (với giả định $LGD = 0.45$), chi phí $FP \approx 0.05 \times EAD$ (tỷ lệ $FN:FP = 9:1$, kèm phân tích độ nhạy $3:1$ đến $10:1$).
    - **Nguyên tắc chống rò rỉ (No Leakage / Overfitting):** Ngưỡng tối ưu không được chọn trên tập Train hay từng fold CV (tránh ước lượng chi phí lạc quan quá mức như phân tích tại PR #16 và `src/train.py`).
-   - **Lộ trình triển khai:** Ngưỡng tối ưu theo ma trận chi phí sẽ được fit đồng thời với Probability Calibration (Platt Scaling) trên tập Valid ở Tuần 3 – T2, và đo lường chi phí kỳ vọng độc lập trên tập Test ở Tuần 3 – T3.
+   - **Lộ trình triển khai:** Calibrator và ngưỡng được chọn trên Valid ở Tuần 3 – T2; chi phí độc lập trên Test đã được đo tại Tuần 3 – T3 và báo cáo ở mục 2.1.
 
 ---
 
