@@ -46,6 +46,8 @@ from src.scoring import (
 )
 
 DEFAULT_MODEL_PATH = PROJECT_ROOT / "models" / "final_model.pkl"
+# Mô hình cuối theo reports/week2_review.md (tham số trong configs/tuned_params.yaml).
+FINAL_STUDY = "lightgbm_monotone"
 
 
 
@@ -645,8 +647,69 @@ def load_calibrated_pipeline(path: Union[str, Path] = DEFAULT_MODEL_PATH) -> "Ca
 
     path = Path(path)
     if not path.exists():
-        raise FileNotFoundError(f"Chưa có mô hình tại '{path}'. Chạy: python scripts/run_pipeline.py --mode calibrate")
+        raise FileNotFoundError(
+            f"Chưa có mô hình tại '{path}'. Chạy: python scripts/run_pipeline.py --mode final-model "
+            "(hoặc --mode calibrate)"
+        )
     return joblib.load(path)
+
+
+def locked_threshold(config: Optional[dict] = None) -> Optional[float]:
+    """Ngưỡng PD vận hành đã khóa (`calibration.threshold` trong configs/config.yaml); None nếu chưa cấu hình."""
+    cfg = load_config() if config is None else config
+    value = cfg.get("calibration", {}).get("threshold")
+    return None if value is None else float(value)
+
+
+def build_final_model(
+    X_train: Any,
+    y_train: Any,
+    X_valid: Any,
+    y_valid: Any,
+    study: str = FINAL_STUDY,
+    config: Optional[dict] = None,
+) -> "CalibratedPipeline":
+    """Mô hình cuối: pipeline đã tuning fit trên Train, Platt fit trên Valid, ngưỡng vận hành đã khóa.
+
+    Cùng quy trình với scripts/evaluate_final_test.py (fit_tuned_pipeline + Platt trên margin của Valid), không
+    tối ưu lại ngưỡng: `threshold` lấy từ cấu hình, `optimal_threshold_` để trống.
+
+    Raises:
+        ValueError: nếu `calibration.threshold` chưa được cấu hình.
+    """
+    from src.tune import fit_tuned_pipeline
+
+    cfg = load_config() if config is None else config
+    threshold = locked_threshold(cfg)
+    if threshold is None:
+        raise ValueError("Chưa có `calibration.threshold` trong configs/config.yaml; không lưu mô hình với ngưỡng mặc định.")
+    scoring = cfg.get("scoring", {})
+    final = CalibratedPipeline(
+        base_pipeline=fit_tuned_pipeline(study, X_train, y_train),
+        method="platt",
+        threshold=threshold,
+        base_score=float(scoring.get("base_score", BASE_SCORE)),
+        base_odds=float(scoring.get("base_odds", BASE_ODDS)),
+        pdo=float(scoring.get("pdo", PDO)),
+        score_clip=(int(scoring.get("clip_min", SCORE_CLIP[0])), int(scoring.get("clip_max", SCORE_CLIP[1]))),
+    )
+    return final.fit_calibrator(X_valid, y_valid, optimize_thresh=False)
+
+
+def export_final_model(model_path: Optional[Union[str, Path]] = None) -> Path:
+    """Huấn luyện mô hình cuối trên Train, calibrate trên Valid và lưu tại `models/final_model.pkl`.
+
+    Chỉ dùng Train và Valid. Khác `run_calibration_experiments`, không chạy so sánh OOF nên không ghi đè các bảng
+    reports/calibration_cv_*.csv.
+    """
+    from src.data_split import load_split_data
+    from src.features import build_features
+
+    train_df, valid_df, _ = load_split_data()
+    X_train, y_train = build_features(train_df)
+    X_valid, y_valid = build_features(valid_df)
+    final = build_final_model(X_train, y_train.to_numpy(dtype=int), X_valid, y_valid.to_numpy(dtype=int))
+    return save_calibrated_pipeline(final, model_path or DEFAULT_MODEL_PATH)
 
 
 # ---------------------------------------------------------------------------
@@ -794,12 +857,14 @@ def run_calibration_experiments(
         _plot_calibration_figures(experiments, fig_dir, y_val)
 
     if save_model and experiments:
-        # Ứng viên chính theo week2_review.md; ngưỡng lưu kèm là ngưỡng tối ưu in-sample trên Valid,
-        # chưa phải ngưỡng cuối cùng của nhóm (xem reports/calibration_threshold.md mục 4–5).
-        primary = "lightgbm_monotone" if "lightgbm_monotone" in experiments else next(iter(experiments))
-        save_calibrated_pipeline(
-            experiments[primary]["scoring"]["calibrated_pipeline"], model_path or DEFAULT_MODEL_PATH
-        )
+        # Ứng viên chính theo week2_review.md. Ngưỡng lưu kèm là ngưỡng vận hành đã khóa (configs/config.yaml,
+        # calibration.threshold); ngưỡng tối ưu in-sample trên Valid vẫn nằm ở `optimal_threshold_` để đối chiếu.
+        primary = FINAL_STUDY if FINAL_STUDY in experiments else next(iter(experiments))
+        final_pipeline = experiments[primary]["scoring"]["calibrated_pipeline"]
+        locked = locked_threshold(cfg)
+        if locked is not None:
+            final_pipeline.threshold = locked
+        save_calibrated_pipeline(final_pipeline, model_path or DEFAULT_MODEL_PATH)
 
     return experiments
 
