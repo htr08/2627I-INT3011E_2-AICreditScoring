@@ -159,7 +159,7 @@ Trong UI, experiment `credit_scoring` hiển thị các run `logreg_baseline`, `
 streamlit run app/streamlit_app.py
 ```
 
-> App nạp baseline Logistic Regression từ MLflow Model Registry (`logreg_baseline@baseline`), được đăng ký bởi `python scripts/run_pipeline.py`. Khi registry chưa có mô hình, app chuyển sang **mock model** (hệ số đặt tay) và hiển thị cảnh báo ở sidebar.
+> App nạp mô hình cuối từ `models/final_model.pkl` (xuất bởi `python scripts/run_pipeline.py --mode final-model`). Khi chưa có file, app dùng baseline Logistic Regression từ MLflow Model Registry (`logreg_baseline@baseline`), rồi **mock model** (hệ số đặt tay) và hiển thị cảnh báo ở sidebar. `DEMO_MODEL=final|baseline|mock` buộc dùng đúng mô hình.
 
 ---
 

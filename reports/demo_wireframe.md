@@ -2,7 +2,7 @@
 
 ## Tóm tắt
 
-Tài liệu này mô tả wireframe của ứng dụng demo `app/streamlit_app.py` (dựng ở Tuần 1 với mock model, đã kết nối baseline Logistic Regression thật): bố cục giao diện, nguồn dữ liệu cho từng thành phần, hợp đồng giao diện với mô hình để thay thế mock, và các việc còn mở.
+Tài liệu này mô tả wireframe của ứng dụng demo `app/streamlit_app.py` (dựng ở Tuần 1 với mock model, nay chạy với mô hình cuối LightGBM monotonic + Platt; baseline Logistic Regression và mock model là phương án dự phòng): bố cục giao diện, nguồn dữ liệu cho từng thành phần, hợp đồng giao diện với mô hình để thay thế mock, và các việc còn mở.
 
 Ứng dụng khởi chạy từ thư mục gốc repo bằng lệnh:
 
@@ -50,7 +50,7 @@ streamlit run app/streamlit_app.py
 | Form nhập | Cột gốc UCI: `LIMIT_BAL`, `AGE`, `EDUCATION`, `MARRIAGE`, `PAY_1..6`, `BILL_AMT1..6`, `PAY_AMT1..6`. Không nhập `SEX` (mô hình chính không dùng biến này). | Người dùng / hồ sơ mẫu (`app/sample_profiles.py`) |
 | PD | Xác suất vỡ nợ đã hiệu chuẩn | `model.explain(record).pd` |
 | Điểm | PDO 600 tại odds 50:1, PDO = 20, clip 300–850 | `src.scoring.pd_to_score` |
-| Mức cảnh báo | 🔴 PD ≥ ngưỡng; 🟡 PD ≥ ngưỡng/2; 🟢 còn lại | Ngưỡng ở sidebar |
+| Mức cảnh báo | Mô hình cuối: 🟢 PD < 9%, 🟡 9% ≤ PD < 27%, 🔴 PD ≥ 27%, kèm hành động đề xuất. Baseline và mock: 🔴 PD ≥ ngưỡng, 🟡 PD ≥ ngưỡng/2 | `app/risk_tiers.py` (`calibration.threshold`, `risk_tiers.alert_threshold`); ngưỡng ở sidebar chỉ cho baseline và mock |
 | Waterfall | Điểm nền → đóng góp từng nhóm → điểm cuối (chưa clip) | `base_points`, `shap_to_points` |
 | Reason codes | Top 3 nhóm làm giảm điểm / tăng điểm | Như trên |
 
@@ -73,11 +73,21 @@ App chỉ gọi `model.explain(record)`, với đối tượng `Explanation` (đ
 - **Cột đầu vào:** form và mô hình dùng cùng tên cột (`PAY_1..6`); mô hình chính thức không dùng `SEX` (Charter mục 8) nên form không nhập biến này.
 - **Hiệu chuẩn:** PD của baseline chưa hiệu chuẩn trên tập Valid. Khi có mô hình cuối đã calibrate: với Platt scaling, SHAP (thang margin) cần nhân với hệ số `a` trước khi cộng theo nhóm; với Isotonic, tính cộng tính không còn đúng và cần ghi chú rõ trong app.
 
-Kết quả với 3 hồ sơ mẫu trên baseline thật (feature freeze v1): Rủi ro thấp PD 7.4% (560 điểm), Ca biên 19.1% (529 điểm), Rủi ro cao 71.1% (461 điểm). Hồ sơ Ca biên có một tháng trễ 2 kỳ (T8), nằm trong vùng 🟡 Theo dõi ở ngưỡng 0,30 trên cả baseline và mock model.
+Kết quả với 3 hồ sơ mẫu trên baseline thật (feature freeze v1): Bình thường PD 7.4% (560 điểm), Ca biên 19.1% (529 điểm), Cảnh báo cao 71.1% (461 điểm). Hồ sơ Ca biên có một tháng trễ 2 kỳ (T8), nằm trong vùng 🟡 Theo dõi ở ngưỡng 0,30 trên cả baseline và mock model.
+
+### 3.2. Adapter cho mô hình cuối
+
+`app/final_model.py` nạp `models/final_model.pkl` (`CalibratedPipeline`: pipeline `preprocess → LGBMClassifier` fit trên Train, Platt fit trên Valid, ngưỡng 0.09), xuất bởi `python scripts/run_pipeline.py --mode final-model`.
+
+- **Giải thích:** `shap.TreeExplainer` trên margin thô; SHAP nhân hệ số Platt `a` và base calibrated bằng `a·φ₀ + b`, nên `base_logit + sum(contributions) == logit(PD)` (kiểm thử tại `tests/test_final_model.py`). Demo không cần dữ liệu Train. Đóng góp được cộng về 5 nhóm đặc trưng; mục "Đóng góp theo biến" liệt kê 10 biến lớn nhất theo điểm.
+- **Phân tầng và hành động:** PD < 9%: Bình thường (duy trì hạn mức, theo dõi định kỳ); 9% ≤ PD < 27%: Theo dõi (nhắc nợ tự động, tạm dừng nâng hạn mức); PD ≥ 27%: Cảnh báo cao (giảm hạn mức, chuyển thu hồi sớm). Ngưỡng lấy từ `configs/config.yaml`, khớp `reports/calibration_threshold.md` mục 6.3.
+- **Kiểm tra đầu vào:** `app/validation.py` chặn chấm điểm khi thiếu trường, sai kiểu hoặc ngoài phạm vi (tuổi 21–79, hạn mức 10.000–1.000.000 NT$, mã `PAY_x` từ −2 đến 9, `PAY_AMT` không âm, mã học vấn và hôn nhân hợp lệ); cảnh báo khi dư nợ vượt 3 lần hạn mức.
+- **Chọn mô hình:** mặc định nạp mô hình cuối, lỗi thì dùng baseline từ MLflow Registry, rồi mock model. Biến môi trường `DEMO_MODEL=final|baseline|mock` buộc dùng đúng mô hình.
+- **Hồ sơ mẫu:** Bình thường PD 4.0% (579 điểm), Ca biên 26.0% (517 điểm, sát ranh giới cảnh báo cao), Cảnh báo cao PD 73.3% (458 điểm).
 
 ## 4. Việc còn mở
 
-- Ngưỡng cảnh báo mặc định 0,30 là tạm thời; thay bằng ngưỡng tối ưu theo ma trận chi phí (Tuần 3).
+- Ngưỡng 0.09 gắn cờ khoảng 73% hồ sơ (`reports/calibration_threshold.md` mục 6.3); cần đối chiếu với năng lực xử lý của quy trình can thiệp trước khi triển khai thực tế.
 - Dải hiển thị thanh điểm (420–640) và tham số PDO cần nhóm thống nhất trước khi đưa vào `configs/config.yaml`.
 - Các con số trên wireframe ở mục 1 lấy từ mock model, chỉ để minh họa bố cục.
-- Adapter hiện chỉ hỗ trợ Logistic Regression. Mô hình cuối dạng cây (XGBoost/LightGBM) cần adapter dùng TreeExplainer.
+- Adapter mô hình cuối chỉ hỗ trợ LightGBM với calibrator Platt; calibrator Isotonic làm tổng SHAP không còn khớp PD (project_plan.md mục 3.5e).
