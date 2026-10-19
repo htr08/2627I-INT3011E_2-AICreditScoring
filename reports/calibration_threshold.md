@@ -128,7 +128,7 @@ Mỗi fold chọn ngưỡng trên bốn fold huấn luyện rồi đo chi phí t
 | Platt | EAD-weighted (NT$/khách hàng) | 0.088 ± 0.008 | 1,645.96 ± 275.43 | 2,854.55 ± 394.33 | 42.3% |
 | Isotonic | EAD-weighted (NT$/khách hàng) | 0.090 ± 0.000 | 1,794.02 ± 323.63 | 2,862.51 ± 408.58 | 37.3% |
 
-Ngưỡng unit-cost OOF của Platt trung bình 0.122 (SD 0.013), phù hợp với vùng ứng viên khoảng 0.09–0.13 hơn là một ngưỡng chính xác 0.11. EAD-weighted OOF cho Platt trung bình 0.088 (SD 0.008). Mức giảm chi phí CV tốt hơn mốc 0.50 trong các fold này, nhưng việc chốt ngưỡng và hiệu quả cuối cùng vẫn phải dựa trên Test một lần theo kế hoạch.
+Ngưỡng unit-cost OOF của Platt trung bình 0.122 (SD 0.013), phù hợp với vùng ứng viên khoảng 0.09–0.13 hơn là một ngưỡng chính xác 0.11. EAD-weighted OOF cho Platt trung bình 0.088 (SD 0.008). Mức giảm chi phí CV tốt hơn mốc 0.50 trong các fold này. Ngưỡng vận hành được chốt ở mục 4.5; hiệu quả cuối cùng được đo trên Test (mục 7).
 
 ### 4.4. Phân tích Trường hợp Trọng số Dư nợ EAD thực tế (in-sample)
 - Khi tính toán có trọng số dư nợ thực tế $\text{EAD} = \max(\text{BILL\_AMT1}, 0)$:
@@ -137,6 +137,20 @@ Ngưỡng unit-cost OOF của Platt trung bình 0.122 (SD 0.013), phù hợp v�
   - Các con số chi phí và mức chênh giữa ngưỡng 0.08, 0.11 và 0.50 đều là in-sample; chưa đủ cơ sở để kết luận ngưỡng 0.11 vững.
 
 ![Đường cong Chi phí Kỳ vọng theo Ngưỡng](figures/cost_curves.png)
+
+### 4.5. Ngưỡng vận hành đã khóa
+
+Ngưỡng vận hành chính thức là **PD ≥ 0.09**, được khóa trước khi đánh giá Test (Tuần 3 – T3).
+
+| Căn cứ | Nội dung |
+| :--- | :--- |
+| Định nghĩa chi phí | Chi phí FN và FP tỷ lệ với EAD theo Charter mục 7 (tỷ lệ FN:FP = 9:1), nên dùng ngưỡng tối ưu có trọng số EAD thay cho ngưỡng chi phí đơn vị. |
+| Ước lượng | Trung bình OOF 5-fold của ngưỡng EAD-weighted (Platt) là 0.088 ± 0.008 (mục 4.3), làm tròn đến 0.01 thành 0.09. |
+| Độ nhạy | Đường chi phí phẳng trong vùng 0.08–0.14 (mục 5); ngưỡng đơn vị in-sample 0.11 và OOF 0.122 cùng nằm trong vùng ứng viên 0.09–0.13. |
+| Cutoff điểm | 553.9 điểm (PDO: 600 điểm tại odds 50:1, PDO = 20). |
+| Lưu trữ | `calibration.threshold` trong `configs/config.yaml`; `models/final_model.pkl` lưu ngưỡng này. Ngưỡng tối ưu in-sample (`optimal_threshold_`) không dùng để phân loại. |
+
+Ngưỡng 0.09 không được điều chỉnh sau khi có kết quả Test. Kết quả tại ngưỡng này trên Test nằm ở `test_evaluation/test_evaluation.md`.
 
 ---
 
@@ -185,7 +199,8 @@ Kết quả in-sample áp dụng trên ứng viên `LightGBM tuned + Monotonic` 
 | **Điểm thấp nhất (Min)** | **423.4 điểm** | Thuộc về khách hàng có nguy cơ vỡ nợ cao nhất (PD = 89.9%) |
 | **Điểm cao nhất (Max)** | **627.1 điểm** | Thuộc về khách hàng an toàn nhất (PD = 0.8%) |
 | **Tỷ lệ bị Clip [300, 850]** | **0.00%** | Toàn bộ 6.000 mẫu nằm hoàn toàn trong thang 300–850 mà không bị bão hòa |
-| **Cutoff Ngưỡng Tối ưu ($p^* = 0.11$)** | **547.5 điểm** | Ngưỡng phân định phân tầng rủi ro |
+| **Cutoff theo ngưỡng vận hành đã khóa ($p^* = 0.09$)** | **553.9 điểm** | Ranh giới giữa nhóm không bị gắn cờ và nhóm bị gắn cờ (mục 6.3) |
+| Cutoff theo ngưỡng in-sample ($p^* = 0.11$) | 547.5 điểm | Chỉ để đối chiếu, không dùng để phân tầng |
 
 ![Phân phối Điểm Tín dụng PDO](figures/score_distribution.png)
 
@@ -193,13 +208,15 @@ PD trung bình của các hồ sơ Valid cần được tính trực tiếp từ
 
 ### 6.3. Bảng Phân tầng Rủi ro & Hành động Đề xuất (Action Tiers)
 
-| Nhóm Phân loại | Dải Điểm PDO | Khoảng Xác suất PD | Tỷ trọng Mẫu Valid | Khuyến nghị Hành động Nghiệp vụ trên App Demo |
-| :--- | :---: | :---: | :---: | :--- |
-| **Đạt chuẩn (Bình thường)** | **> 547.5 điểm** | **PD < 11.0%** | **35.28%** | Duy trì hạn mức, tiếp tục theo dõi định kỳ bình thường |
-| **Theo dõi / Cảnh báo nhẹ** | **515.8 – 547.5 điểm** | **11.0% ≤ PD < 27.0%** | **38.92%** | Gửi thông báo nhắc nợ tự động, tạm dừng nâng hạn mức tín dụng |
-| **Cảnh báo cao (Can thiệp sớm)** | **< 515.8 điểm** | **PD ≥ 27.0%** | **25.80%** | Giảm hạn mức khả dụng, chuyển sang bộ phận thu hồi nợ sớm can thiệp |
+| Nhóm Phân loại | Dải Điểm PDO | Khoảng Xác suất PD | Tỷ trọng Mẫu Valid | Tỷ lệ vỡ nợ thực tế (Valid) | Khuyến nghị Hành động Nghiệp vụ trên App Demo |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **Đạt chuẩn (Bình thường)** | **> 553.9 điểm** | **PD < 9.0%** | **27.53%** | 6.17% | Duy trì hạn mức, tiếp tục theo dõi định kỳ bình thường |
+| **Theo dõi / Cảnh báo nhẹ** | **515.8 – 553.9 điểm** | **9.0% ≤ PD < 27.0%** | **46.65%** | 15.54% | Gửi thông báo nhắc nợ tự động, tạm dừng nâng hạn mức tín dụng |
+| **Cảnh báo cao (Can thiệp sớm)** | **< 515.8 điểm** | **PD ≥ 27.0%** | **25.82%** | 51.00% | Giảm hạn mức khả dụng, chuyển sang bộ phận thu hồi nợ sớm can thiệp |
 
-Ngưỡng 0.11 gắn cờ **64,72%** hồ sơ trong kết quả in-sample, trong khi precision chỉ **30,49%**. Đây là đánh đổi theo chi phí FN/FP giả định; tỷ lệ cảnh báo cao cần được đối chiếu với năng lực xử lý và chính sách can thiệp. Không nên coi đây là khuyến nghị vận hành trước khi có kết quả OOF/Test và xác nhận sức chứa của quy trình nghiệp vụ.
+Ranh giới dưới (PD = 0.09, 553.9 điểm) là ngưỡng vận hành đã khóa (mục 4.5). Ranh giới trên (PD = 0.27, 515.8 điểm) trùng ngưỡng tối ưu khi tỷ lệ chi phí FN:FP = 3:1 (mục 5). Hai nhóm dưới là nhóm bị gắn cờ, chiếm 72.47% hồ sơ Valid; hành động mạnh (giảm hạn mức, chuyển thu hồi) chỉ áp dụng cho nhóm PD ≥ 27% (25.82%). Trên Test, ngưỡng 0.09 gắn cờ 72.98% hồ sơ với precision 28.02% và recall 92.46% (`test_evaluation/test_evaluation.md`). Tỷ lệ gắn cờ này cần được đối chiếu với năng lực xử lý và chính sách can thiệp trước khi triển khai thực tế.
+
+Tỷ trọng và tỷ lệ vỡ nợ thực tế trong bảng được tính lại trên Valid bằng mô hình lưu tại `models/final_model.pkl`. Số liệu ngưỡng 0.11 ở mục 4.2 (gắn cờ 64,72%, precision 30,49%) là kết quả in-sample, chỉ để đối chiếu.
 
 ---
 
@@ -214,9 +231,10 @@ Ngưỡng 0.11 gắn cờ **64,72%** hồ sơ trong kết quả in-sample, trong
    - Tích hợp cờ `--mode calibrate` vào `scripts/run_pipeline.py`.
 2. **Quyết định Kỹ thuật then chốt:**
    - OOF chưa cho thấy Platt hoặc Isotonic cải thiện Brier so với xác suất thô. Nếu vẫn cần hiệu chuẩn để hỗ trợ diễn giải SHAP, Platt là phương án giữ được tính cộng tính nhưng phải chấp nhận rằng lợi ích PD chưa được chứng minh.
-   - **Tham số Platt Scaling:** $a = 1.0129$, $b = 0.0367$.
-   - **Ngưỡng 0.11 và cutoff 547.5** hiện chỉ là kết quả chọn/đo in-sample trên Valid, chưa được chốt làm ngưỡng chính thức. Vùng ứng viên cần xem xét là 0.09–0.13 và phải xác nhận lại bằng CV/Test.
+   - **Tham số Platt Scaling:** $a = 1.0129$, $b = 0.0367$ (báo cáo OOF). Mô hình lưu tại `models/final_model.pkl`, huấn luyện lại bằng `--mode final-model`, cho $a = 1.0128$, $b = 0.0364$.
+   - **Ngưỡng vận hành: PD ≥ 0.09, cutoff 553.9 điểm**, khóa trước khi đánh giá Test (mục 4.5). Ngưỡng 0.11 và cutoff 547.5 là kết quả in-sample trên Valid, chỉ để đối chiếu.
    - Mức giảm chi phí 48,66% và Recall 89,22% cũng là số in-sample; không diễn giải như hiệu quả ngoài mẫu.
-3. **Kế hoạch tiếp theo (Tuần 3 – T3):**
-   - Chạy nghiệm thu cuối cùng trên tập Test (duy nhất 1 lần) để hoàn thiện bảng so sánh và báo cáo tổng kết.
-   - Bàn giao `CalibratedPipeline` và các ngưỡng phân tầng cho Thành viên C tích hợp vào giao diện demo Streamlit. `--mode calibrate` lưu mô hình (ứng viên chính, Platt, ngưỡng tối ưu in-sample trên Valid) tại `models/final_model.pkl`; nạp bằng `src.calibrate.load_calibrated_pipeline`. Ngưỡng lưu kèm chưa phải ngưỡng cuối cùng của nhóm.
+3. **Nghiệm thu Tuần 3 – T3:**
+   - Test được đánh giá một lần: LightGBM + Platt đạt ROC-AUC 0.7825 (bootstrap 95% CI 0.7681–0.7973), cao hơn baseline Logistic 0.7609; DeLong p = 1.86 × 10⁻⁹. Chi tiết và đối chiếu KPI tham chiếu: `test_evaluation/test_evaluation.md`.
+   - Bàn giao cho Thành viên C: `models/final_model.pkl` (`CalibratedPipeline`: LightGBM monotonic + Platt, ngưỡng 0.09), nạp bằng `src.calibrate.load_calibrated_pipeline`; xuất lại bằng `python scripts/run_pipeline.py --mode final-model` (chỉ dùng Train và Valid). Bảng phân tầng ở mục 6.3.
+   - Bàn giao cho Thành viên A: dự đoán Test của các mô hình đã đánh giá (`test_evaluation/test_predictions.csv`, không commit) phục vụ phần fairness.
