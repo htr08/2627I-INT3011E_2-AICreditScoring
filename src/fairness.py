@@ -1,182 +1,154 @@
-import os
-import sys
-from pathlib import Path
+"""Chỉ số công bằng theo nhóm (giới tính, nhóm tuổi) cho mô hình cảnh báo rủi ro tín dụng.
 
-# Cấu hình sys.path trước khi import gói 'src'
-ROOT_DIR = Path(__file__).resolve().parent.parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+Quy ước theo Project Charter mục 7–8 và project_plan.md mục 4.3 (Tuần 3 – T3):
+- Flag rate: tỷ lệ khách hàng bị gắn cờ can thiệp, tức PD >= ngưỡng.
+- Disparate Impact Ratio (DIR) = flag rate của nhóm / flag rate của nhóm tham chiếu. Cờ là kết quả bất lợi
+  nên cảnh báo khi DIR nằm ngoài [0.8, 1.25] (cận trên là nghịch đảo của ngưỡng 0.8 trong Charter).
+- Chỉ số bổ sung DIR không bị flag = (1 - flag rate nhóm) / (1 - flag rate tham chiếu): quy tắc 4/5 áp dụng cho
+  kết quả có lợi. Hữu ích khi ngưỡng gắn cờ phần lớn danh mục: flag rate của mọi nhóm đều cao nên chênh lệch tương đối
+  của DIR theo flag rate bị nén.
+- AUC theo nhóm, kèm khoảng tin cậy bootstrap 95%.
+
+Module chỉ chứa phần tính toán. Việc huấn luyện mô hình và ghi báo cáo nằm ở scripts/analyze_fairness.py.
+"""
+
+from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from sklearn.metrics import roc_auc_score
 
-from src.data_split import load_split_data
-from src.features import build_features
-from src.pipelines import build_scorecard_pipeline
+from src.evaluate import bootstrap_metric_ci, compute_roc_auc
 
-
-def dataframe_to_markdown(df: pd.DataFrame) -> str:
-    """Chuyển DataFrame sang bảng Markdown, tự fallback nếu thiếu 'tabulate'."""
-    try:
-        return df.to_markdown(index=False)
-    except ImportError:
-        headers = [str(col) for col in df.columns]
-        lines = [
-            "| " + " | ".join(headers) + " |",
-            "| " + " | ".join(["---"] * len(headers)) + " |"
-        ]
-        for _, row in df.iterrows():
-            vals = [str(val) for val in row.values]
-            lines.append("| " + " | ".join(vals) + " |")
-        return "\n".join(lines)
+AGE_GROUP_ORDER: Tuple[str, ...] = ("<30", "30–50", ">50")
+SEX_LABELS: Dict[int, str] = {1: "Nam", 2: "Nữ"}
+# Dải DIR chấp nhận được: ngưỡng 0.8 của Charter và nghịch đảo 1 / 0.8 cho chiều ngược lại.
+DIR_BAND: Tuple[float, float] = (0.8, 1.25)
 
 
-def assign_age_group(age: float) -> str:
-    """Phân nhóm tuổi theo yêu cầu nghiệp vụ."""
-    if age < 30:
-        return "<30"
-    elif age <= 50:
-        return "30–50"
-    else:
-        return ">50"
+def assign_age_groups(ages: Sequence[float]) -> pd.Series:
+    """Nhóm tuổi theo plan: <30, 30–50 (gồm cả 30 và 50), >50."""
+    ages = pd.Series(ages)
+    labels = np.where(ages < 30, AGE_GROUP_ORDER[0], np.where(ages <= 50, AGE_GROUP_ORDER[1], AGE_GROUP_ORDER[2]))
+    return pd.Series(labels, index=ages.index)
 
 
-def calculate_group_metrics(df: pd.DataFrame, group_col: str, threshold: float = 0.5) -> pd.DataFrame:
-    """Tính Flag Rate, AUC và Disparate Impact Ratio (DIR) theo nhóm."""
-    results = []
-    overall_flag_rate = (df["y_pred"] == 1).mean()
+def label_sex(sex: Sequence[int]) -> pd.Series:
+    """Mã SEX của CSV (1 = Nam, 2 = Nữ) -> nhãn nhóm; mã khác gây ValueError."""
+    sex = pd.Series(sex)
+    labels = sex.map(SEX_LABELS)
+    if labels.isna().any():
+        raise ValueError(f"Mã SEX ngoài {sorted(SEX_LABELS)}: {sorted(sex[labels.isna()].unique())}")
+    return labels
 
-    for group_val, group_data in df.groupby(group_col):
-        n_samples = len(group_data)
-        flag_rate = (group_data["y_pred"] == 1).mean()
-        dir_ratio = flag_rate / overall_flag_rate if overall_flag_rate > 0 else np.nan
 
-        if group_data["y_true"].nunique() > 1:
-            auc = roc_auc_score(group_data["y_true"], group_data["y_prob"])
+def select_reference_group(groups: Sequence[str]) -> str:
+    """Nhóm tham chiếu mặc định: nhóm đông nhất (hòa thì lấy nhóm đứng đầu theo thứ tự chữ cái)."""
+    counts = pd.Series(list(groups)).value_counts()
+    return sorted(counts[counts == counts.max()].index)[0]
+
+
+def dir_within_band(ratio: float, band: Tuple[float, float] = DIR_BAND) -> bool:
+    """True nếu DIR nằm trong dải chấp nhận; so sánh sau khi làm tròn 2 chữ số để khớp giá trị hiển thị
+    trong báo cáo (NaN không đạt)."""
+    if np.isnan(ratio):
+        return False
+    return bool(band[0] <= round(ratio, 2) <= band[1])
+
+
+def _ratio(numerator: float, denominator: float) -> float:
+    return float(numerator / denominator) if denominator > 0 else float("nan")
+
+
+def _bootstrap_means(values: np.ndarray, n_boot: int, rng: np.random.Generator) -> np.ndarray:
+    """Trung bình của n_boot mẫu bootstrap (rút có hoàn lại trong nhóm)."""
+    idx = rng.integers(0, len(values), size=(n_boot, len(values)))
+    return values[idx].mean(axis=1)
+
+
+def group_fairness_table(
+    y_true: Sequence[int],
+    y_prob: Sequence[float],
+    groups: Sequence[str],
+    threshold: float,
+    reference: Optional[str] = None,
+    order: Optional[Sequence[str]] = None,
+    n_boot: int = 1000,
+    seed: int = 42,
+    band: Tuple[float, float] = DIR_BAND,
+) -> pd.DataFrame:
+    """Bảng chỉ số công bằng theo nhóm tại một ngưỡng PD.
+
+    Mỗi dòng là một nhóm với các cột:
+        group, n, default_rate, flag_rate,
+        dir, dir_low, dir_high, dir_ok  : DIR theo flag rate so với nhóm tham chiếu, CI bootstrap 95%, trong dải `band`
+                                          (so sánh sau khi làm tròn 2 chữ số)
+        nonflag_dir, nonflag_ok         : DIR của tỷ lệ không bị flag
+        auc, auc_low, auc_high          : AUC của nhóm và CI bootstrap 95% (NaN nếu nhóm chỉ có một nhãn)
+        is_reference
+    CI của DIR lấy mẫu bootstrap độc lập trong từng nhóm (kích thước nhóm là cố định).
+
+    Raises:
+        ValueError: độ dài đầu vào không khớp, hoặc `reference` không phải một nhóm.
+    """
+    y_true = np.asarray(y_true).astype(int)
+    y_prob = np.asarray(y_prob, dtype=float)
+    groups = np.asarray(groups)
+    if not (len(y_true) == len(y_prob) == len(groups)):
+        raise ValueError("y_true, y_prob và groups phải có cùng độ dài.")
+
+    present = list(pd.unique(groups))
+    names = [g for g in (order or present) if g in present] + [g for g in present if order and g not in order]
+    reference = select_reference_group(groups) if reference is None else reference
+    if reference not in present:
+        raise ValueError(f"Nhóm tham chiếu {reference!r} không có trong dữ liệu: {sorted(map(str, present))}")
+
+    flagged = (y_prob >= threshold).astype(float)
+    rng = np.random.default_rng(seed)
+    boot_flag = {g: _bootstrap_means(flagged[groups == g], n_boot, rng) for g in names}
+    ref_rate, ref_boot = flagged[groups == reference].mean(), boot_flag[reference]
+
+    rows = []
+    for g in names:
+        mask = groups == g
+        rate = flagged[mask].mean()
+        ratio = _ratio(rate, ref_rate)
+        nonflag_ratio = _ratio(1 - rate, 1 - ref_rate)
+        if g == reference:
+            low = high = 1.0
         else:
-            auc = np.nan
+            with np.errstate(divide="ignore", invalid="ignore"):
+                ratios = boot_flag[g] / ref_boot
+            ratios = ratios[np.isfinite(ratios)]
+            low, high = (np.percentile(ratios, [2.5, 97.5]) if len(ratios) else (np.nan, np.nan))
 
-        warning = "⚠️ CẢNH BÁO (DIR < 0.8)" if (dir_ratio < 0.8 or dir_ratio > 1.25) else "✅ Đạt"
+        if len(np.unique(y_true[mask])) == 2:
+            auc, auc_low, auc_high = bootstrap_metric_ci(
+                y_true[mask], y_prob[mask], metric_fn=compute_roc_auc, n_bootstraps=n_boot, random_state=seed
+            )
+        else:
+            auc = auc_low = auc_high = float("nan")
 
-        results.append({
-            "Subgroup": str(group_val),
-            "N": n_samples,
-            "Flag Rate": round(flag_rate, 4),
-            "Disparate Impact Ratio": round(dir_ratio, 4) if not np.isnan(dir_ratio) else "N/A",
-            "AUC": round(auc, 4) if not np.isnan(auc) else "N/A",
-            "Fairness Status": warning
+        rows.append({
+            "group": g,
+            "n": int(mask.sum()),
+            "default_rate": float(y_true[mask].mean()),
+            "flag_rate": float(rate),
+            "dir": ratio,
+            "dir_low": float(low),
+            "dir_high": float(high),
+            "dir_ok": dir_within_band(ratio, band),
+            "nonflag_dir": nonflag_ratio,
+            "nonflag_ok": dir_within_band(nonflag_ratio, band),
+            "auc": float(auc),
+            "auc_low": float(auc_low),
+            "auc_high": float(auc_high),
+            "is_reference": g == reference,
         })
-
-    return pd.DataFrame(results)
-
-
-def run_fairness_evaluation(threshold: float = 0.5):
-    print("=== BẮT ĐẦU ĐÁNH GIÁ TÍNH CÔNG BẰNG (FAIRNESS CHECK) TRÊN TẬP VALIDATION ===")
-
-    train_df, valid_df, _ = load_split_data()
-
-    sex_map = {1: "Nam (1)", 2: "Nữ (2)"}
-    valid_sex = valid_df["SEX"].map(sex_map).values if "SEX" in valid_df.columns else ["Unknown"] * len(valid_df)
-    valid_age_group = valid_df["AGE"].apply(assign_age_group).values
-
-    # 1. Mô hình Mặc định (KHÔNG CÓ SEX)
-    X_tr_no_sex, y_tr_no_sex = build_features(train_df, include_sex=False)
-    X_va_no_sex, y_va_no_sex = build_features(valid_df, include_sex=False)
-
-    pipe_no_sex = build_scorecard_pipeline(drop_sensitive=True)
-    pipe_no_sex.fit(X_tr_no_sex, y_tr_no_sex)
-
-    prob_no_sex = pipe_no_sex.predict_proba(X_va_no_sex)[:, 1]
-    pred_no_sex = (prob_no_sex >= threshold).astype(int)
-
-    df_eval_no_sex = pd.DataFrame({
-        "y_true": y_va_no_sex.values,
-        "y_prob": prob_no_sex,
-        "y_pred": pred_no_sex,
-        "SEX": valid_sex,
-        "AGE_GROUP": valid_age_group
-    })
-
-    # 2. Mô hình Đối chiếu (CÓ SEX)
-    X_tr_sex, y_tr_sex = build_features(train_df, include_sex=True)
-    X_va_sex, y_va_sex = build_features(valid_df, include_sex=True)
-
-    pipe_sex = build_scorecard_pipeline(drop_sensitive=False)
-    pipe_sex.fit(X_tr_sex, y_tr_sex)
-
-    prob_sex = pipe_sex.predict_proba(X_va_sex)[:, 1]
-    pred_sex = (prob_sex >= threshold).astype(int)
-
-    df_eval_sex = pd.DataFrame({
-        "y_true": y_va_sex.values,
-        "y_prob": prob_sex,
-        "y_pred": pred_sex,
-        "SEX": valid_sex,
-        "AGE_GROUP": valid_age_group
-    })
-
-    # 3. Tính chỉ số Fairness
-    sex_fairness_no_sex = calculate_group_metrics(df_eval_no_sex, "SEX", threshold)
-    sex_fairness_sex = calculate_group_metrics(df_eval_sex, "SEX", threshold)
-    age_fairness_no_sex = calculate_group_metrics(df_eval_no_sex, "AGE_GROUP", threshold)
-    age_fairness_sex = calculate_group_metrics(df_eval_sex, "AGE_GROUP", threshold)
-
-    auc_total_no_sex = roc_auc_score(y_va_no_sex, prob_no_sex)
-    auc_total_sex = roc_auc_score(y_va_sex, prob_sex)
-
-    # 4. Xuất Báo cáo Markdown
-    os.makedirs("reports", exist_ok=True)
-    report_path = "reports/fairness_evaluation.md"
-
-    md_content = f"""# Báo cáo Đánh giá Tính Công bằng (Fairness Check Report)
-
-- **Tập dữ liệu**: Validation set (`n = {len(valid_df)}`)
-- **Ngưỡng quyết định (Decision Threshold)**: `{threshold}`
-- **Ngưỡng cảnh báo Disparate Impact (DIR)**: `< 0.8` hoặc `> 1.25` (Quy tắc 80%)
-
----
-
-## 1. Tổng quan So sánh Hiệu năng
-
-| Phiên bản Mô hình | Cột nhạy cảm `SEX` | Overall AUC | Flag Rate Tổng thể |
-| :--- | :---: | :---: | :---: |
-| **Mô hình Mặc định (No SEX)** | Bị loại bỏ | **{auc_total_no_sex:.4f}** | {(pred_no_sex == 1).mean():.4f} |
-| **Mô hình Đối chiếu (With SEX)** | Được giữ lại | **{auc_total_sex:.4f}** | {(pred_sex == 1).mean():.4f} |
-
----
-
-## 2. Phân tích Theo Giới tính (SEX)
-
-### A. Mô hình Mặc định (Không có `SEX`)
-{dataframe_to_markdown(sex_fairness_no_sex)}
-
-### B. Mô hình Đối chiếu (Có `SEX`)
-{dataframe_to_markdown(sex_fairness_sex)}
-
----
-
-## 3. Phân tích Theo Nhóm Tuổi (AGE)
-
-### A. Mô hình Mặc định (Không có `SEX`)
-{dataframe_to_markdown(age_fairness_no_sex)}
-
-### B. Mô hình Đối chiếu (Có `SEX`)
-{dataframe_to_markdown(age_fairness_sex)}
-
----
-
-## 4. Kết luận & Khuyến nghị Nghiệp vụ
-
-1. **Tác động của `SEX`**: Việc loại bỏ biến `SEX` khỏi mô hình chính thức đảm bảo tính tuân thủ pháp lý và phòng ngừa rủi ro phân biệt đối xử trực tiếp.
-2. **Đánh giá Disparate Impact (DIR)**: Các sub-group được kiểm soát bằng chỉ số DIR (ngưỡng 0.8) để phát hiện và xử lý kịp thời chênh lệch can thiệp rủi ro.
-"""
-
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(md_content)
-
-    print(f"\n[SUCCESS] Đã hoàn thành Fairness Check! Báo cáo xuất tại: {report_path}")
+    return pd.DataFrame(rows)
 
 
-if __name__ == "__main__":
-    run_fairness_evaluation()
+def overall_summary(y_true: Sequence[int], y_prob: Sequence[float], threshold: float) -> Dict[str, float]:
+    """AUC và flag rate toàn tập tại ngưỡng PD."""
+    y_true = np.asarray(y_true).astype(int)
+    y_prob = np.asarray(y_prob, dtype=float)
+    return {"auc": compute_roc_auc(y_true, y_prob), "flag_rate": float((y_prob >= threshold).mean())}
