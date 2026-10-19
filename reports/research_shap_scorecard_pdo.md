@@ -299,7 +299,7 @@ Bảng quy đổi (chưa clip):
 
 **Về thang 300–850.** Điểm 300 tương ứng PD ≈ 99,85% và điểm 850 tương ứng PD ≈ 0,0003%. Với PD thực tế của bộ dữ liệu (khoảng 1%–90%), điểm nằm trong khoảng ~420–640, do đó thao tác clip hầu như không xảy ra và thang hiển thị 300–850 sẽ có phần lớn diện tích không được sử dụng. Hai hướng xử lý:
 
-1. Giữ nguyên tham số (đúng chuẩn, dễ diễn giải) và hiển thị thanh điểm trên demo theo khoảng giá trị thực tế.
+1. Giữ nguyên tham số (đúng chuẩn, dễ diễn giải) và hiển thị thanh điểm trên demo theo khoảng giá trị thực tế. **Đã chọn** (clip 300–850, thanh hiển thị 420–640; xem `project_plan.md` mục 3.5d).
 2. Tăng PDO (ví dụ 40–50) để trải rộng điểm. Đây là lựa chọn về cách hiển thị, không ảnh hưởng đến mô hình, và cần được thống nhất giữa các thành viên trước khi ghi vào `configs/config.yaml`.
 
 ### 4.4. Phân bổ điểm cho từng thuộc tính (Scorecard)
@@ -353,7 +353,7 @@ Các trường hợp kiểm thử đề xuất: `pd_to_score(1/51) == 600`; đi�
 2. **Thang giải thích thống nhất:** SHAP được quy về logit(PD) đã hiệu chuẩn (nhân hệ số Platt $a$), sau đó quy sang điểm bằng hệ số $-\text{Factor}$. `src/explain.py` cần chuẩn hóa shape đầu ra (RandomForest trả về `(n, M, 2)`).
 3. **Reason codes theo nhóm đặc trưng** thay vì từng biến, do tương quan cao trong `PAY_x` và `BILL_AMT_x`.
 4. **Scorecard:** bổ sung `optbinning` vào `requirements.txt`; binning/WoE fit trong từng fold; kiểm tra dấu hệ số (kỳ vọng âm).
-5. **PDO:** giữ tham số 600 tại odds 50:1, PDO = 20 như kế hoạch; điểm thực tế nằm trong khoảng ~420–640. Cách hiển thị thang điểm trên demo cần được thống nhất (mục 4.3) trước khi đưa các tham số vào `configs/config.yaml`.
+5. **PDO:** giữ tham số 600 tại odds 50:1, PDO = 20 như kế hoạch; điểm thực tế nằm trong khoảng ~420–640. Cách hiển thị thang điểm trên demo đã chốt ở mục 4.3.
 
 ## Tài liệu tham khảo
 
