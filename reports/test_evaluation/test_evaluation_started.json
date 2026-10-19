@@ -1,0 +1,16 @@
+{
+  "started_at_utc": "2026-10-19T02:54:46.021160+00:00",
+  "model": "lightgbm_monotone",
+  "calibration": "platt",
+  "threshold": 0.09,
+  "bootstrap_replicates": 1000,
+  "status": "completed",
+  "completed_at_utc": "2026-10-19T02:55:19.456276+00:00",
+  "n_test": 6000,
+  "artifacts": [
+    "test_metrics.csv",
+    "test_comparison.csv",
+    "test_curves.png",
+    "test_evaluation.md"
+  ]
+}
