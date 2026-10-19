@@ -20,28 +20,23 @@ Theo phân công nhiệm vụ tại `reports/project_plan.md` (mục 4.2 – Tu�
 
 Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bảng so sánh mô hình** trong `reports/project_plan.md`:
 
-| Mô hình | AUC CV (mean ± std) | AUC Test (95% CI) | Gini | KS | PR-AUC | Brier (thô) | Thời gian train | Khả năng giải thích |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | 0.7745 ± 0.0116 | Dành cho Tuần 3 – T3 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | ~2.5s | Rất cao (hệ số odds ratio trực tiếp) |
-| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Dành cho Tuần 3 – T3 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | ~1.8s | Cao (cây quyết định if-then rõ ràng) |
-| Logistic Scorecard (WoE) | 0.7790 ± 0.0083 | Dành cho Tuần 3 – T3 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | ~4.2s | Rất cao (bảng điểm PDO, chuẩn ngân hàng) |
-| Random Forest (default) | 0.7667 ± 0.0097 | Dành cho Tuần 3 – T3 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | ~8.5s | Trung bình (SHAP / Feature Importance) |
-| XGBoost (default) | 0.7597 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | ~5.2s | Trung bình (SHAP TreeExplainer) |
-| LightGBM (default) | 0.7805 ± 0.0077 | Dành cho Tuần 3 – T3 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | ~3.5s | Trung bình (SHAP TreeExplainer) |
-| CatBoost (default) | 0.7844 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | ~28.0s | Trung bình (SHAP TreeExplainer) |
-| LightGBM tuned + Monotonic | 0.7906 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | ~14.0s | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
-| CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | ~66.0s | Trung bình (SHAP TreeExplainer) |
-| MLP (tuỳ chọn) | Chưa triển khai (tùy chọn) | – | – | – | – | – | – | Thấp (KernelExplainer) |
+| Mô hình | AUC CV (mean ± std) | AUC Test (95% CI) | Gini | KS | PR-AUC | Brier (thô) | Khả năng giải thích |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Logistic Regression (baseline) | 0.7745 ± 0.0116 | Dành cho Tuần 3 – T3 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | Rất cao (hệ số odds ratio trực tiếp) |
+| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Dành cho Tuần 3 – T3 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | Cao (cây quyết định if-then rõ ràng) |
+| Logistic Scorecard (WoE) | 0.7790 ± 0.0083 | Dành cho Tuần 3 – T3 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | Rất cao (bảng điểm PDO, chuẩn ngân hàng) |
+| Random Forest (default) | 0.7667 ± 0.0097 | Dành cho Tuần 3 – T3 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | Trung bình (SHAP / Feature Importance) |
+| XGBoost (default) | 0.7597 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | Trung bình (SHAP TreeExplainer) |
+| LightGBM (default) | 0.7805 ± 0.0077 | Dành cho Tuần 3 – T3 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | Trung bình (SHAP TreeExplainer) |
+| CatBoost (default) | 0.7844 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | Trung bình (SHAP TreeExplainer) |
+| LightGBM tuned + Monotonic | 0.7906 ± 0.0074 | Dành cho Tuần 3 – T3 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
+| CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Dành cho Tuần 3 – T3 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | Trung bình (SHAP TreeExplainer) |
+| MLP (tuỳ chọn) | Chưa triển khai (tùy chọn) | – | – | – | – | – | Thấp (KernelExplainer) |
 
 > **Ghi chú kỹ thuật & Phương pháp tính:**
 > - **Chỉ số phân tách & xác suất:** Đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`).
 > - **Ngưỡng & cách tính chỉ số (Recall, Precision, F1):** Đo tại ngưỡng cố định `threshold = 0.5` độc lập trên từng fold kiểm định (validation fold), sau đó lấy trung bình (`mean`) và độ lệch chuẩn mẫu (`std`, `ddof=1`) qua 5 fold. Cách tính này khớp hoàn toàn với quy trình `run_cv` và `summarize_folds` log vào MLflow (không gộp chung toàn bộ OOF dự đoán trước khi tính).
-> - **Phương pháp đo & nguồn dữ liệu thời gian train:** Cột 'Thời gian train' / 'Thời gian' phản ánh thời gian thực tế (wall-clock time) chạy toàn bộ quy trình 5-fold Stratified CV trên tập Train (18.000 dòng) trên môi trường CPU chuẩn (8 luồng).
->   - *Nguồn số liệu:*
->     + Nhóm baseline & mặc định (LR, DT, Scorecard, RF, XGBoost, LightGBM default, CatBoost default): Đo trực tiếp trên 1 lượt chạy 5-fold CV từ pipeline thực nghiệm Tuần 1 và Tuần 2 (`reports/experiments_boosting_imbalance.md`).
->     + Nhóm Optuna tuned (T4): Thời gian trung bình 1 lượt chạy 5-fold CV (1 trial) ghi nhận trong báo cáo tuning `reports/experiments_optuna_tuning.md` (mục 2.3, 4.3: LightGBM tuned ~12.5s, LightGBM tuned + Monotonic ~14.0s, CatBoost tuned ~66.0s, CatBoost tuned + Monotonic ~318.0s).
->     + Nhóm đối chiếu Fairness (T5): Thời gian chạy 5-fold CV ghi nhận tại T5 (`reports/experiments_optuna_tuning.md` / `src/tune.py`).
->   - *Làm rõ về MLflow:* Trong MLflow, `elapsed_seconds` ghi nhận tổng thời gian chạy của cả study Optuna (10.5–39.7 phút cho 34–37 trials). Lưu ý metric `fit_seconds` của phiên bản có biến SEX (~45s cho LightGBM, ~249s cho CatBoost) trong `src/tune.py` được tính từ trước khi chạy CV đến sau khi fit pipeline cuối, nên bao gồm cả: 5-fold CV có SEX, 5-fold CV không SEX và bước fit cuối cùng (`_fit_final_pipeline`) trên toàn bộ tập Train (chứ không phải chỉ là 'huấn luyện 1 lần duy nhất').
+> - **Lược bỏ cột thời gian train:** Cột thời gian huấn luyện đã được lược bỏ khỏi các bảng so sánh theo khuyến nghị của reviewer. Nguyên nhân: MLflow không lưu trữ đồng nhất một metric thời gian cho tất cả các mô hình và thời gian chạy wall-clock phụ thuộc cấu hình phần cứng cục bộ. Với quy mô 18.000 mẫu (mọi mô hình đều hoàn thành dưới 1 phút), thời gian train không phải là tiêu chí đánh đổi hay KPI chọn mô hình. Độ trễ suy luận (Inference Latency trên từng hồ sơ) sẽ được đo lường chuẩn xác ở Tuần 3 khi triển khai ứng dụng demo.
 > - **Thống nhất số liệu Boosting default:** Bảng chính, bảng phụ và bảng kiểm định paired t-test sử dụng đồng bộ số liệu tính trên cùng fold-cache Optuna T4 (LightGBM default: 0.7805 ± 0.0077; CatBoost default: 0.7844 ± 0.0074). Bộ số này bảo đảm khớp toán học hoàn toàn giữa chênh lệch từng fold trong bảng paired và điểm CV trung bình.
 > - **Brier score:** Brier score ở bảng trên là Brier thô (chưa qua calibration). Brier sau hiệu chuẩn sẽ được cập nhật ở Tuần 3 sau bước Platt scaling trên tập Valid.
 > - **Đóng băng tập Test:** Cột Test (ROC-AUC 95% CI, Gini Test, KS Test...) tuân thủ quy tắc đóng băng tập Test, chỉ thực hiện duy nhất 1 lần tại Tuần 3 – T3.
@@ -52,25 +47,25 @@ Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bản
 
 Tổng hợp toàn bộ 17 cấu hình mô hình và kỹ thuật đã thử nghiệm (bao gồm Baseline, Tree Ensembles, Gradient Boosting, Xử lý mất cân bằng, Optuna Tuning, và Đối chiếu Fairness):
 
-| Mô hình | Nhóm | ROC-AUC (mean ± std) | Gini | KS | PR-AUC | Brier Score | Recall@0.5 | Precision@0.5 | F1-Score | Thời gian | Ghi chú |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | Baseline | 0.7745 ± 0.0116 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | 0.3619 | 0.6760 | 0.4714 | ~2.5s | Baseline chuẩn Tuần 1 |
-| Decision Tree (max_depth=5) | Baseline | 0.7672 ± 0.0120 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | 0.3531 | 0.6629 | 0.4595 | ~1.8s | Baseline cây quyết định |
-| Logistic Scorecard (WoE) | Scorecard | 0.7790 ± 0.0083 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | 0.3744 | 0.6596 | 0.4777 | ~4.2s | Scorecard chuẩn mực (coarse classing + ràng buộc dấu) |
-| Random Forest (default) | Tree Ensembles | 0.7667 ± 0.0097 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | 0.3870 | 0.6313 | 0.4797 | ~8.5s | Tree ensemble mặc định T2 |
-| XGBoost (default) | Tree Ensembles | 0.7597 ± 0.0073 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | 0.3669 | 0.6077 | 0.4575 | ~5.2s | XGBoost mặc định T2 |
-| LightGBM (default) | Gradient Boosting (T3) | 0.7805 ± 0.0077 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | 0.3767 | 0.6677 | 0.4816 | ~3.5s | Boosting mặc định (đồng bộ fold-cache Optuna T4) |
-| CatBoost (default) | Gradient Boosting (T3) | 0.7844 ± 0.0074 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | 0.3784 | 0.6696 | 0.4836 | ~28.0s | Boosting mặc định (đồng bộ fold-cache Optuna T4) |
-| LightGBM Balanced (class_weight) | Imbalance Experiments | 0.7809 ± 0.0081 | 0.5617 | 0.4278 | 0.5505 | 0.1682 | 0.6110 | 0.4758 | 0.5350 | ~3.8s | Recall cao nhưng Brier tăng mạnh |
-| CatBoost Balanced (auto_class_weights) | Imbalance Experiments | 0.7806 ± 0.0081 | 0.5611 | 0.4341 | 0.5520 | 0.1659 | 0.6072 | 0.4872 | 0.5406 | ~30.0s | Recall cao nhưng Brier tăng mạnh |
-| LightGBM + SMOTE (in-fold) | Imbalance Experiments | 0.7776 ± 0.0058 | 0.5551 | 0.4216 | 0.5440 | 0.1383 | 0.4309 | 0.6222 | 0.5092 | ~7.2s | Thí nghiệm phụ SMOTE: AUC giảm |
-| CatBoost + SMOTE (in-fold) | Imbalance Experiments | 0.7747 ± 0.0057 | 0.5493 | 0.4192 | 0.5410 | 0.1386 | 0.4156 | 0.6130 | 0.4953 | ~54.0s | Thí nghiệm phụ SMOTE: AUC giảm |
-| LightGBM tuned (Optuna) | Optuna Tuned (T4) | 0.7898 ± 0.0077 | 0.5796 | 0.4439 | 0.5650 | 0.1327 | 0.3774 | 0.6696 | 0.4828 | ~12.5s | Tuned 37 trials, plateau stopping |
-| LightGBM tuned + Monotonic | Optuna Tuned (T4) - Candidate | 0.7906 ± 0.0074 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | 0.3774 | 0.6748 | 0.4839 | ~14.0s | ỨNG VIÊN CHÍNH: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu |
-| CatBoost tuned (Optuna) | Optuna Tuned (T4) - Candidate | 0.7911 ± 0.0073 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | 0.3674 | 0.6754 | 0.4759 | ~66.0s | ỨNG VIÊN ĐỐI CHỨNG: AUC CV cao nhất toàn dự án (0.7911) |
-| CatBoost tuned + Monotonic (đối chiếu) | Optuna Tuned (T4) | 0.7910 ± 0.0077 | 0.5820 | 0.4434 | 0.5632 | 0.1328 | 0.3722 | 0.6675 | 0.4780 | ~318.0s | Thời gian train lâu ~5x so với CatBoost thường |
-| LightGBM tuned + Monotonic (with SEX) | Fairness Comparison (T5) | 0.7907 ± 0.0075 | 0.5814 | 0.4465 | 0.5634 | 0.1327 | 0.3769 | 0.6708 | 0.4828 | ~14.5s | SEX chỉ chiếm 0.17% feature importance; delta AUC +0.0001 |
-| CatBoost tuned (with SEX) | Fairness Comparison (T5) | 0.7912 ± 0.0079 | 0.5824 | 0.4461 | 0.5681 | 0.1326 | 0.3692 | 0.6723 | 0.4767 | ~68.0s | SEX chỉ chiếm 0.54% feature importance; delta AUC +0.0001 |
+| Mô hình | Nhóm | ROC-AUC (mean ± std) | Gini | KS | PR-AUC | Brier Score | Recall@0.5 | Precision@0.5 | F1-Score | Ghi chú |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Logistic Regression (baseline) | Baseline | 0.7745 ± 0.0116 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | 0.3619 | 0.6760 | 0.4714 | Baseline chuẩn Tuần 1 |
+| Decision Tree (max_depth=5) | Baseline | 0.7672 ± 0.0120 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | 0.3531 | 0.6629 | 0.4595 | Baseline cây quyết định |
+| Logistic Scorecard (WoE) | Scorecard | 0.7790 ± 0.0083 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | 0.3744 | 0.6596 | 0.4777 | Scorecard chuẩn mực (coarse classing + ràng buộc dấu) |
+| Random Forest (default) | Tree Ensembles | 0.7667 ± 0.0097 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | 0.3870 | 0.6313 | 0.4797 | Tree ensemble mặc định T2 |
+| XGBoost (default) | Tree Ensembles | 0.7597 ± 0.0073 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | 0.3669 | 0.6077 | 0.4575 | XGBoost mặc định T2 |
+| LightGBM (default) | Gradient Boosting (T3) | 0.7805 ± 0.0077 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | 0.3767 | 0.6677 | 0.4816 | Boosting mặc định (đồng bộ fold-cache Optuna T4) |
+| CatBoost (default) | Gradient Boosting (T3) | 0.7844 ± 0.0074 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | 0.3784 | 0.6696 | 0.4836 | Boosting mặc định (đồng bộ fold-cache Optuna T4) |
+| LightGBM Balanced (class_weight) | Imbalance Experiments | 0.7809 ± 0.0081 | 0.5617 | 0.4278 | 0.5505 | 0.1682 | 0.6110 | 0.4758 | 0.5350 | Recall cao nhưng Brier tăng mạnh |
+| CatBoost Balanced (auto_class_weights) | Imbalance Experiments | 0.7806 ± 0.0081 | 0.5611 | 0.4341 | 0.5520 | 0.1659 | 0.6072 | 0.4872 | 0.5406 | Recall cao nhưng Brier tăng mạnh |
+| LightGBM + SMOTE (in-fold) | Imbalance Experiments | 0.7776 ± 0.0058 | 0.5551 | 0.4216 | 0.5440 | 0.1383 | 0.4309 | 0.6222 | 0.5092 | Thí nghiệm phụ SMOTE: AUC giảm |
+| CatBoost + SMOTE (in-fold) | Imbalance Experiments | 0.7747 ± 0.0057 | 0.5493 | 0.4192 | 0.5410 | 0.1386 | 0.4156 | 0.6130 | 0.4953 | Thí nghiệm phụ SMOTE: AUC giảm |
+| LightGBM tuned (Optuna) | Optuna Tuned (T4) | 0.7898 ± 0.0077 | 0.5796 | 0.4439 | 0.5650 | 0.1327 | 0.3774 | 0.6696 | 0.4828 | Tuned 37 trials, plateau stopping |
+| LightGBM tuned + Monotonic | Optuna Tuned (T4) - Candidate | 0.7906 ± 0.0074 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | 0.3774 | 0.6748 | 0.4839 | ỨNG VIÊN CHÍNH: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu |
+| CatBoost tuned (Optuna) | Optuna Tuned (T4) - Candidate | 0.7911 ± 0.0073 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | 0.3674 | 0.6754 | 0.4759 | ỨNG VIÊN ĐỐI CHỨNG: AUC CV cao nhất toàn dự án (0.7911) |
+| CatBoost tuned + Monotonic (đối chiếu) | Optuna Tuned (T4) | 0.7910 ± 0.0077 | 0.5820 | 0.4434 | 0.5632 | 0.1328 | 0.3722 | 0.6675 | 0.4780 | Thời gian train lâu ~5x so với CatBoost thường |
+| LightGBM tuned + Monotonic (with SEX) | Fairness Comparison (T5) | 0.7907 ± 0.0075 | 0.5814 | 0.4465 | 0.5634 | 0.1327 | 0.3769 | 0.6708 | 0.4828 | SEX chỉ chiếm 0.17% feature importance; delta AUC +0.0001 |
+| CatBoost tuned (with SEX) | Fairness Comparison (T5) | 0.7912 ± 0.0079 | 0.5824 | 0.4461 | 0.5681 | 0.1326 | 0.3692 | 0.6723 | 0.4767 | SEX chỉ chiếm 0.54% feature importance; delta AUC +0.0001 |
 
 ---
 
@@ -181,7 +176,7 @@ Thành viên B (ML Engineer) đề xuất với nhóm tại cuộc họp Review 
 ```bash
 python scripts/compare_models.py
 # hoặc
-python scripts/run_pipeline.py --mode compare
+python scripts/run_pipeline.py --mode summary
 ```
 
 File dữ liệu máy đọc (machine-readable) được lưu tại: `reports/model_comparison.csv`.

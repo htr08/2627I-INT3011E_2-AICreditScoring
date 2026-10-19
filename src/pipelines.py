@@ -169,3 +169,76 @@ def build_scorecard_pipeline(
         ("model", SignConstrainedLogisticRegression() if sign_constrained else LogisticRegression(max_iter=1000)),
     ]
     return Pipeline(steps)
+
+
+def build_blackbox_pipeline(
+    model_type: str = "xgboost",
+    include_sex: bool = False,
+    sampler: Optional[object] = None,
+    **kwargs,
+) -> Pipeline:
+    """Tạo Pipeline cho các mô hình dạng Black-box (XGBoost, LightGBM, CatBoost, Random Forest).
+
+    Tận dụng `make_pipeline` để đồng nhất bước Preprocessing với mô hình Scorecard,
+    tránh data leakage trong CV.
+
+    Args:
+        model_type: Loại mô hình ("xgboost", "lightgbm", "catboost", "rf").
+        include_sex: False cho mô hình chính thức; True để đối chiếu fairness.
+        sampler: Đối tượng resample (vd: SMOTE) nếu có.
+        **kwargs: Tham số truyền vào cho classifier (max_depth, learning_rate, n_estimators,...).
+    """
+    model_type = model_type.lower()
+
+    if model_type == "xgboost":
+        from xgboost import XGBClassifier
+
+        default_params = dict(
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.05,
+            random_state=42,
+            eval_metric="logloss",
+        )
+        default_params.update(kwargs)
+        clf = XGBClassifier(**default_params)
+
+    elif model_type == "lightgbm":
+        from lightgbm import LGBMClassifier
+
+        default_params = dict(
+            n_estimators=100,
+            max_depth=4,
+            learning_rate=0.05,
+            random_state=42,
+            verbose=-1,
+        )
+        default_params.update(kwargs)
+        clf = LGBMClassifier(**default_params)
+
+    elif model_type in ("catboost", "cb"):
+        from catboost import CatBoostClassifier
+
+        default_params = dict(
+            iterations=100,
+            depth=4,
+            learning_rate=0.05,
+            random_seed=42,
+            verbose=0,
+        )
+        default_params.update(kwargs)
+        clf = CatBoostClassifier(**default_params)
+
+    elif model_type == "rf":
+        from sklearn.ensemble import RandomForestClassifier
+
+        default_params = dict(n_estimators=100, max_depth=6, random_state=42)
+        default_params.update(kwargs)
+        clf = RandomForestClassifier(**default_params)
+
+    else:
+        raise ValueError(
+            f"model_type '{model_type}' không hợp lệ. Chọn 'xgboost', 'lightgbm', 'catboost' hoặc 'rf'."
+        )
+
+    return make_pipeline(estimator=clf, include_sex=include_sex, sampler=sampler)

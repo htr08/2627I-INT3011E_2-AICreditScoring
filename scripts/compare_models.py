@@ -6,7 +6,7 @@ Deliverables: Báo cáo bảng so sánh sơ bộ hiệu năng 5-fold Stratified 
 
 Usage:
     python scripts/compare_models.py
-    python scripts/run_pipeline.py --mode compare
+    python scripts/run_pipeline.py --mode summary
 """
 
 import sys
@@ -378,7 +378,6 @@ def build_summary_table_df() -> pd.DataFrame:
                 "KS": f"{item['ks_mean']:.4f}",
                 "PR-AUC": f"{item['pr_auc_mean']:.4f}",
                 "Brier (thô)": f"{item['brier_mean']:.4f}",
-                "Thời gian train": item["train_time"],
                 "Khả năng giải thích": item["interpretability"],
             })
 
@@ -391,7 +390,6 @@ def build_summary_table_df() -> pd.DataFrame:
         "KS": "–",
         "PR-AUC": "–",
         "Brier (thô)": "–",
-        "Thời gian train": "–",
         "Khả năng giải thích": "Thấp (KernelExplainer)",
     })
 
@@ -413,7 +411,6 @@ def build_full_comparison_df() -> pd.DataFrame:
             "Recall@0.5": f"{item['recall_05']:.4f}",
             "Precision@0.5": f"{item['precision_05']:.4f}",
             "F1-Score": f"{item['f1_05']:.4f}",
-            "Thời gian": item["train_time"],
             "Ghi chú": item["note"],
         })
     return pd.DataFrame(rows)
@@ -526,12 +523,7 @@ def generate_markdown_report() -> str:
     md.append("> **Ghi chú kỹ thuật & Phương pháp tính:**")
     md.append("> - **Chỉ số phân tách & xác suất:** Đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`).")
     md.append("> - **Ngưỡng & cách tính chỉ số (Recall, Precision, F1):** Đo tại ngưỡng cố định `threshold = 0.5` độc lập trên từng fold kiểm định (validation fold), sau đó lấy trung bình (`mean`) và độ lệch chuẩn mẫu (`std`, `ddof=1`) qua 5 fold. Cách tính này khớp hoàn toàn với quy trình `run_cv` và `summarize_folds` log vào MLflow (không gộp chung toàn bộ OOF dự đoán trước khi tính).")
-    md.append("> - **Phương pháp đo & nguồn dữ liệu thời gian train:** Cột 'Thời gian train' / 'Thời gian' phản ánh thời gian thực tế (wall-clock time) chạy toàn bộ quy trình 5-fold Stratified CV trên tập Train (18.000 dòng) trên môi trường CPU chuẩn (8 luồng).")
-    md.append(">   - *Nguồn số liệu:*")
-    md.append(">     + Nhóm baseline & mặc định (LR, DT, Scorecard, RF, XGBoost, LightGBM default, CatBoost default): Đo trực tiếp trên 1 lượt chạy 5-fold CV từ pipeline thực nghiệm Tuần 1 và Tuần 2 (`reports/experiments_boosting_imbalance.md`).")
-    md.append(">     + Nhóm Optuna tuned (T4): Thời gian trung bình 1 lượt chạy 5-fold CV (1 trial) ghi nhận trong báo cáo tuning `reports/experiments_optuna_tuning.md` (mục 2.3, 4.3: LightGBM tuned ~12.5s, LightGBM tuned + Monotonic ~14.0s, CatBoost tuned ~66.0s, CatBoost tuned + Monotonic ~318.0s).")
-    md.append(">     + Nhóm đối chiếu Fairness (T5): Thời gian chạy 5-fold CV ghi nhận tại T5 (`reports/experiments_optuna_tuning.md` / `src/tune.py`).")
-    md.append(">   - *Làm rõ về MLflow:* Trong MLflow, `elapsed_seconds` ghi nhận tổng thời gian chạy của cả study Optuna (10.5–39.7 phút cho 34–37 trials). Lưu ý metric `fit_seconds` của phiên bản có biến SEX (~45s cho LightGBM, ~249s cho CatBoost) trong `src/tune.py` được tính từ trước khi chạy CV đến sau khi fit pipeline cuối, nên bao gồm cả: 5-fold CV có SEX, 5-fold CV không SEX và bước fit cuối cùng (`_fit_final_pipeline`) trên toàn bộ tập Train (chứ không phải chỉ là 'huấn luyện 1 lần duy nhất').")
+    md.append("> - **Lược bỏ cột thời gian train:** Cột thời gian huấn luyện đã được lược bỏ khỏi các bảng so sánh theo khuyến nghị của reviewer. Nguyên nhân: MLflow không lưu trữ đồng nhất một metric thời gian cho tất cả các mô hình và thời gian chạy wall-clock phụ thuộc cấu hình phần cứng cục bộ. Với quy mô 18.000 mẫu (mọi mô hình đều hoàn thành dưới 1 phút), thời gian train không phải là tiêu chí đánh đổi hay KPI chọn mô hình. Độ trễ suy luận (Inference Latency trên từng hồ sơ) sẽ được đo lường chuẩn xác ở Tuần 3 khi triển khai ứng dụng demo.")
     md.append("> - **Thống nhất số liệu Boosting default:** Bảng chính, bảng phụ và bảng kiểm định paired t-test sử dụng đồng bộ số liệu tính trên cùng fold-cache Optuna T4 (LightGBM default: 0.7805 ± 0.0077; CatBoost default: 0.7844 ± 0.0074). Bộ số này bảo đảm khớp toán học hoàn toàn giữa chênh lệch từng fold trong bảng paired và điểm CV trung bình.")
     md.append("> - **Brier score:** Brier score ở bảng trên là Brier thô (chưa qua calibration). Brier sau hiệu chuẩn sẽ được cập nhật ở Tuần 3 sau bước Platt scaling trên tập Valid.")
     md.append("> - **Đóng băng tập Test:** Cột Test (ROC-AUC 95% CI, Gini Test, KS Test...) tuân thủ quy tắc đóng băng tập Test, chỉ thực hiện duy nhất 1 lần tại Tuần 3 – T3.")
@@ -641,7 +633,7 @@ def generate_markdown_report() -> str:
     md.append("```bash")
     md.append("python scripts/compare_models.py")
     md.append("# hoặc")
-    md.append("python scripts/run_pipeline.py --mode compare")
+    md.append("python scripts/run_pipeline.py --mode summary")
     md.append("```")
     md.append("")
     md.append("File dữ liệu máy đọc (machine-readable) được lưu tại: `reports/model_comparison.csv`.")
