@@ -1,7 +1,7 @@
 """Quy đổi PD sang điểm tín dụng theo phương pháp PDO (reports/research_shap_scorecard_pdo.md, mục 4).
 
 Score = Offset + Factor * ln(odds tốt/xấu), với Factor = PDO / ln(2), Offset = Base Score - Factor * ln(Base Odds).
-Tham số mặc định: 600 điểm tại odds 50:1, PDO = 20 (chưa đưa vào configs/config.yaml, chờ kết quả Tuần 2 của B để thống nhất).
+Tham số mặc định: 600 điểm tại odds 50:1, PDO = 20, thang [300, 850]; giá trị dùng khi chạy lấy từ mục `scoring` của configs/config.yaml.
 """
 
 import numpy as np
