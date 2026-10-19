@@ -11,7 +11,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 | Tập dữ liệu | Valid, n = 6000 (1327 hồ sơ vỡ nợ, 22.12%). Tập Test không được sử dụng. |
 | Mô hình chính | LightGBM tuned + monotonic (`lightgbm_monotone`), không dùng SEX, huấn luyện trên Train; Platt scaling fit trên Valid (a = 1.0128, b = 0.0364). Đây là mô hình cuối theo `week2_review.md`. |
 | Mô hình đối chiếu | Logistic Scorecard (WoE), không dùng SEX: mô hình tham chiếu minh bạch (`week2_review.md` mục 6) và là mô hình của bản đánh giá công bằng ban đầu. |
-| Ngưỡng vận hành | PD ≥ 0.09: ngưỡng do thành viên B khóa trước khi đánh giá Test, làm tròn từ trung bình OOF EAD-weighted (0.088) với tỷ lệ chi phí FN:FP = 9:1 theo Charter mục 7 (`reports/test_evaluation/test_evaluation.md`). Mô hình chính gắn cờ 72.5% hồ sơ Valid. |
+| Ngưỡng vận hành | PD ≥ 0.09: ngưỡng khóa trước khi đánh giá Test, làm tròn từ trung bình OOF EAD-weighted (0.088) với tỷ lệ chi phí FN:FP = 9:1 theo Charter mục 7 (`reports/test_evaluation/test_evaluation.md`). Mô hình chính gắn cờ 72.5% hồ sơ Valid. |
 | Ngưỡng đối chiếu | PD ≥ 0.5: ngưỡng phân loại mặc định, mô hình chính gắn cờ 12.1% hồ sơ Valid. Dùng để kiểm tra độ nhạy của kết luận theo ngưỡng, vì ngưỡng vận hành gắn cờ phần lớn danh mục. |
 | Nhóm | Giới tính (SEX = 1 Nam, 2 Nữ) và nhóm tuổi <30, 30–50, >50 (30 và 50 thuộc nhóm 30–50). Hai thuộc tính này chỉ dùng để đánh giá; mô hình không dùng SEX, AGE được đưa vào dưới dạng `AGE_BIN` (Charter mục 8). |
 | Flag rate | Tỷ lệ hồ sơ bị gắn cờ can thiệp (PD ≥ ngưỡng). |
@@ -32,7 +32,7 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 
 - Bản Scorecard có SEX giữ SEX trong đầu vào nhưng bước WoE loại SEX vì IV = 0.0078 < ngưỡng 0.02. PD của hai bản Scorecard trùng nhau, nên số liệu của hai bản giống hệt nhau và không phản ánh tác động của SEX. Tác động của SEX được đo trên mô hình LightGBM, nơi SEX thực sự là đầu vào.
 - Với mô hình chính, thêm SEX đổi AUC Valid +0.0002 và SEX chiếm 0.17% tầm quan trọng (gain) của mô hình có SEX.
-- Kết quả CV 5-fold của thành viên B (`model_comparison.md` mục 6.4) cùng chiều: thêm SEX đổi AUC trung bình +0.0001; tỷ trọng tầm quan trọng của SEX là LightGBM tuned + monotonic 0.17%; CatBoost tuned 0.54%.
+- Kết quả CV 5-fold (`model_comparison.md` mục 6.4) cùng chiều: thêm SEX đổi AUC trung bình +0.0001; tỷ trọng tầm quan trọng của SEX là LightGBM tuned + monotonic 0.17%; CatBoost tuned 0.54%.
 
 ---
 
@@ -89,14 +89,14 @@ _Tuần 3 – T3: Thành viên A (Data Engineer / Analyst)_
 1. Giới tính (mô hình chính, không dùng SEX), flag rate: ngưỡng 0.09: Nam 74.8% so với Nữ 70.9% (DIR Nam/Nữ = 1.06, CI 95% [1.02, 1.09], trong dải 0.8–1.25); ngưỡng 0.5: Nam 13.9% so với Nữ 10.8% (DIR Nam/Nữ = 1.28, CI 95% [1.11, 1.46], ngoài dải 0.8–1.25). Tỷ lệ vỡ nợ thực tế trên Valid: Nam 25.5%, Nữ 19.9%. Nhóm bị flag nhiều hơn (Nam) cũng là nhóm có tỷ lệ vỡ nợ thực tế cao hơn.
 2. Nhóm tuổi (mô hình chính), DIR ngoài dải: ngưỡng 0.09: mọi nhóm trong dải; ngưỡng 0.5: mọi nhóm trong dải. AUC thấp nhất ở nhóm >50: 0.759 (N = 448, CI 95% [0.705, 0.808]); khoảng tin cậy chồng lấn với nhóm tham chiếu 30–50 (0.790, [0.772, 0.809]), nên chưa đủ bằng chứng về khác biệt AUC giữa hai nhóm.
 3. Vai trò của SEX: thêm SEX vào mô hình chính đổi AUC Valid +0.0002 và SEX chiếm 0.17% tầm quan trọng (gain); tỷ lệ flag Nam/Nữ 1.06 (không SEX) so với 1.08 (có SEX) ở ngưỡng 0.09, 1.28 (không SEX) so với 1.32 (có SEX) ở ngưỡng 0.5. Bỏ SEX không làm giảm hiệu năng đo được, nên chính sách không dùng SEX (Charter mục 8) được giữ. Chênh lệch flag rate giữa Nam và Nữ vẫn còn khi không dùng SEX; loại SEX không triệt tiêu chênh lệch này.
-4. Ở ngưỡng vận hành 0.09, mô hình chính gắn cờ 72.5% hồ sơ Valid nên flag rate của mọi nhóm đều cao. Cùng một chênh lệch tuyệt đối, DIR theo flag rate lệch gần 1 hơn DIR không bị flag; ví dụ nhóm >50: flag rate 79.0% so với 69.9% của nhóm 30–50 cho DIR = 1.13, còn tỷ lệ không bị flag 21.0% so với 30.1% cho DIR không bị flag = 0.70. DIR không bị flag (quy tắc 4/5 áp dụng cho kết quả có lợi) nằm ngoài 0.8–1.25 ở: >50 (0.70). Kết luận về công bằng ở ngưỡng này phụ thuộc vào định nghĩa DIR, cần nhóm thống nhất.
+4. Ở ngưỡng vận hành 0.09, mô hình chính gắn cờ 72.5% hồ sơ Valid nên flag rate của mọi nhóm đều cao. Cùng một chênh lệch tuyệt đối, DIR theo flag rate lệch gần 1 hơn DIR không bị flag; ví dụ nhóm >50: flag rate 79.0% so với 69.9% của nhóm 30–50 cho DIR = 1.13, còn tỷ lệ không bị flag 21.0% so với 30.1% cho DIR không bị flag = 0.70. DIR không bị flag (quy tắc 4/5 áp dụng cho kết quả có lợi) nằm ngoài 0.8–1.25 ở: >50 (0.70). Chỉ số theo Charter là DIR theo flag rate; DIR không bị flag là chỉ số bổ sung, chỉ để tham chiếu.
 5. Logistic Scorecard (WoE) (đối chiếu), DIR ngoài dải: ngưỡng 0.09: mọi nhóm trong dải; ngưỡng 0.5: Nam (DIR = 1.34, CI [1.17, 1.54]), >50 (DIR = 1.31, CI [1.02, 1.67]). AUC thấp nhất ở nhóm >50: 0.729 (N = 448, CI 95% [0.672, 0.781]); khoảng tin cậy chồng lấn với nhóm tham chiếu 30–50 (0.772, [0.754, 0.793]), nên chưa đủ bằng chứng về khác biệt AUC giữa hai nhóm.
 
 ---
 
 ## 6. Hạn chế
 
-- Kết quả trên Valid. Kết quả trên Test (dự đoán xuất sau lượt nghiệm thu của thành viên B): `fairness_evaluation_test.md`.
+- Kết quả trên Valid. Kết quả trên Test (dự đoán xuất sau lượt nghiệm thu): `fairness_evaluation_test.md`.
 - DIR đo chênh lệch tỷ lệ gắn cờ giữa các nhóm, không hiệu chỉnh theo chênh lệch tỷ lệ vỡ nợ thực tế giữa các nhóm. Recall và tỷ lệ cảnh báo oan theo nhóm (equalized odds) không nằm trong phạm vi báo cáo.
 - Nhóm >50 có 448 hồ sơ nên CI của DIR và AUC rộng; chênh lệch nằm trong CI chưa đủ bằng chứng là khác biệt thực.
 - Calibrator Platt (hai tham số a, b) được fit trên chính tập Valid dùng để đánh giá.

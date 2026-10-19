@@ -1,5 +1,5 @@
 # Cấu hình dùng chung cho toàn dự án.
-# Các mục split, chi phí FN/FP, PDO, nhóm đặc trưng sẽ bổ sung dần theo project_plan.md.
+# Gồm: chia dữ liệu, MLflow, tuning, nhóm đặc trưng, calibration và ngưỡng vận hành, ma trận chi phí, phân tầng rủi ro, PDO.
 
 random_state: 42
 

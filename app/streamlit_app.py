@@ -40,7 +40,7 @@ PAY_OPTIONS = {
 DEFAULT_PROFILE = "Ca biên"
 # Ngưỡng của baseline và mock model (không có ngưỡng đã khóa). Mô hình cuối dùng phân tầng cố định ở app/risk_tiers.py.
 DEFAULT_THRESHOLD = 0.30
-# Dải điểm thực tế với PDO 600/50:1/20 (research_shap_scorecard_pdo.md, mục 4.3).
+# Dải hiển thị của thanh vị trí điểm (PDO 600/50:1/20, research_shap_scorecard_pdo.md mục 4.3); điểm vẫn được clip ở [300, 850] theo configs/config.yaml.
 SCORE_DISPLAY_RANGE = (420, 640)
 
 

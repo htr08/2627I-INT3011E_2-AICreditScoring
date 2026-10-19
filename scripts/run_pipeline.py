@@ -4,6 +4,8 @@ Usage:
     python scripts/run_pipeline.py                    # Huấn luyện baseline models (LR & DT)
     python scripts/run_pipeline.py --mode advanced    # Huấn luyện RF & XGBoost (tham số mặc định)
     python scripts/run_pipeline.py --mode all         # Cả baseline và advanced
+    python scripts/run_pipeline.py --mode boosting    # LightGBM & CatBoost (tham số mặc định)
+    python scripts/run_pipeline.py --mode imbalance   # class_weight và SMOTE trong từng fold
     python scripts/run_pipeline.py --include-sex      # Bản đối chiếu fairness (có SEX, không đăng ký model)
     python scripts/run_pipeline.py --mode woe    # Báo cáo WoE/IV trên Train
     python scripts/run_pipeline.py --mode woe --freeze   # Ghi configs/feature_freeze_v1.yaml
@@ -13,7 +15,8 @@ Usage:
     python scripts/run_pipeline.py --mode tune   # Optuna: LightGBM (+monotone), CatBoost
     python scripts/run_pipeline.py --mode tune --tune-model catboost --monotone --max-trials 20
     python scripts/run_pipeline.py --mode tuned --include-sex   # Mô hình đã tuning có SEX (đối chiếu fairness)
-    python scripts/run_pipeline.py --mode summary     # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
+    python scripts/run_pipeline.py --mode summary     # In bảng so sánh sơ bộ (CV mean ± std), ghi reports/model_comparison.csv
+    python scripts/run_pipeline.py --mode calibrate   # Platt/Isotonic trên Valid, ngưỡng theo chi phí, điểm PDO, lưu mô hình
     python scripts/run_pipeline.py --mode final-model # Lưu models/final_model.pkl (Platt + ngưỡng đã khóa), không đụng Test
 """
 

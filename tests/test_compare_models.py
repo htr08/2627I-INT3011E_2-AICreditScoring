@@ -11,25 +11,22 @@ from scripts.compare_models import (
     build_summary_table_df,
     check_charter_kpis,
     compute_statistical_tests,
-    df_to_markdown,
-    generate_markdown_report,
     main,
 )
 
 
 def test_build_summary_table_df():
-    """Kiểm tra cấu trúc bảng tóm tắt chuẩn theo Mục 5 project_plan.md."""
+    """Kiểm tra cấu trúc bảng tóm tắt (chỉ số CV) theo mục 5 project_plan.md."""
     df = build_summary_table_df()
     assert isinstance(df, pd.DataFrame)
     assert not df.empty
     expected_cols = [
         "Mô hình",
         "AUC CV (mean ± std)",
-        "AUC Test (95% CI)",
-        "Gini",
-        "KS",
-        "PR-AUC",
-        "Brier (thô)",
+        "Gini (CV)",
+        "KS (CV)",
+        "PR-AUC (CV)",
+        "Brier thô (CV)",
         "Khả năng giải thích",
     ]
     assert list(df.columns) == expected_cols
@@ -126,38 +123,17 @@ def test_check_charter_kpis():
     assert any("CatBoost" in m for m in df["Mô hình"])
 
 
-def test_df_to_markdown():
-    """Kiểm tra hàm chuyển đổi DataFrame sang Markdown table không phụ thuộc tabulate."""
-    sample = pd.DataFrame({
-        "Model": ["A", "B"],
-        "AUC": [0.78, 0.79],
-    })
-    md = df_to_markdown(sample)
-    assert "| Model | AUC |" in md
-    assert "| --- | --- |" in md
-    assert "| A | 0.78 |" in md
-    assert "| B | 0.79 |" in md
-
-
-def test_generate_markdown_report():
-    """Kiểm tra nội dung báo cáo markdown hoàn chỉnh."""
-    content = generate_markdown_report()
-    assert "# Báo cáo Tổng hợp: Bảng So sánh Sơ bộ Các Mô hình" in content
-    assert "Tuần 2 – T6: Thành viên B (ML Engineer)" in content
-    assert "LightGBM tuned + Monotonic" in content
-    assert "CatBoost tuned" in content
-    assert "Kiểm định paired t-test" in content
-
-
 def test_compare_models_main(tmp_path, monkeypatch):
-    """Kiểm tra main() ghi đúng các file artifacts."""
+    """main() chỉ ghi bảng máy đọc và không động vào báo cáo model_comparison.md viết tay."""
     monkeypatch.setattr("scripts.compare_models.PROJECT_ROOT", tmp_path)
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    md_file = reports / "model_comparison.md"
+    md_file.write_text("báo cáo viết tay, có kết quả Test", encoding="utf-8")
+
     main()
 
-    csv_file = tmp_path / "reports" / "model_comparison.csv"
-    md_file = tmp_path / "reports" / "model_comparison.md"
-
+    csv_file = reports / "model_comparison.csv"
     assert csv_file.exists()
-    assert md_file.exists()
     assert len(csv_file.read_text(encoding="utf-8-sig")) > 100
-    assert len(md_file.read_text(encoding="utf-8")) > 500
+    assert md_file.read_text(encoding="utf-8") == "báo cáo viết tay, có kết quả Test"

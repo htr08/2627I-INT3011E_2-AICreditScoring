@@ -106,7 +106,7 @@ Tỷ lệ vỡ nợ khoảng 22% không phải mất cân bằng nặng. Hướn
 
 #### d) Quy đổi PD sang điểm tín dụng
 
-Sử dụng phương pháp PDO (Points to Double the Odds): Score = Offset + Factor × ln(odds tốt/xấu), với Factor = PDO / ln(2) và Offset = Base Score − Factor × ln(Base Odds). Tham số đề xuất: Base Score = 600 tại odds 50:1, PDO = 20. Kết quả được giới hạn (clip) trong thang 300–850 để hiển thị trên demo. Công thức và tham số được ghi rõ trong báo cáo.
+Sử dụng phương pháp PDO (Points to Double the Odds): Score = Offset + Factor × ln(odds tốt/xấu), với Factor = PDO / ln(2) và Offset = Base Score − Factor × ln(Base Odds). Tham số đề xuất: Base Score = 600 tại odds 50:1, PDO = 20. Kết quả được giới hạn (clip) trong thang 300–850 theo thang điểm tín dụng thông dụng; clip chỉ là chốt chặn số học, không dùng để thu hẹp điểm: với PD thực tế của dữ liệu, điểm nằm trong khoảng ~420–640 nên hầu như không hồ sơ nào bị clip, và các hồ sơ ngoại lai vẫn giữ điểm phân biệt. Thanh vị trí điểm trên demo hiển thị khoảng 420–640 cho dễ đọc. Công thức và tham số được ghi rõ trong báo cáo.
 
 #### e) Lưu ý khi dùng SHAP
 
@@ -152,7 +152,7 @@ Sử dụng phương pháp PDO (Points to Double the Odds): Score = Offset + Fac
 
 | Ngày | Thành viên A (Data) | Thành viên B (ML) | Thành viên C (XAI & Product) |
 |---|---|---|---|
-| T2 | Phân tích lỗi (Error Analysis) trên tập Valid: đặc điểm các hồ sơ FN và FP. | Calibration trên tập Valid (so sánh Platt — fit tay trên `output_margin=True` — và Isotonic theo Brier score). Chọn ngưỡng tối ưu theo ma trận chi phí, kèm phân tích độ nhạy. Quy đổi PD sang điểm theo PDO, giới hạn thang 420–630. | So sánh mức đồng thuận về tầm quan trọng đặc trưng (theo nhóm) giữa XGBoost, LightGBM và Logistic qua SHAP. |
+| T2 | Phân tích lỗi (Error Analysis) trên tập Valid: đặc điểm các hồ sơ FN và FP. | Calibration trên tập Valid (so sánh Platt — fit tay trên `output_margin=True` — và Isotonic theo Brier score). Chọn ngưỡng tối ưu theo ma trận chi phí, kèm phân tích độ nhạy. Quy đổi PD sang điểm theo PDO, giới hạn (clip) thang 300–850 (mục 3.5d). | So sánh mức đồng thuận về tầm quan trọng đặc trưng (theo nhóm) giữa XGBoost, LightGBM và Logistic qua SHAP. |
 | T3 | Fairness check: flag rate (tỷ lệ bị gắn cờ can thiệp), disparate impact ratio và AUC theo giới tính và nhóm tuổi (<30 / 30–50 / >50) tại ngưỡng đã chọn; ngưỡng cảnh báo disparate impact < 0.8. So sánh phiên bản có và không có SEX. | **Đánh giá cuối trên tập Test (chạy 1 lần duy nhất):** ROC, PR, KS, Calibration Curve, bootstrap 95% CI, DeLong test giữa mô hình cuối và baseline. Cung cấp số liệu Test cho A cập nhật phần fairness. | Tích hợp mô hình chính thức vào Streamlit: nhập thông tin hoặc chọn hồ sơ mẫu có sẵn (Bình thường / Cảnh báo cao / Ca biên), validate input, trả về PD, điểm, mức độ rủi ro & hành động đề xuất (theo dõi / giảm hạn mức / chuyển thu hồi nợ) và SHAP Waterfall Plot. Dùng TreeExplainer nếu mô hình cuối là cây; LinearExplainer nếu là Logistic. |
 | T4 | Viết báo cáo: Dữ liệu, EDA, Feature Engineering, Fairness. | Viết báo cáo: Phương pháp, Kết quả so sánh; refactor code, cập nhật README. | Viết báo cáo: XAI và hệ thống lý do cảnh báo (reason codes theo nhóm đặc trưng); soạn Model Card kèm mục "Mục đích sử dụng: công cụ cảnh báo sớm/quản lý danh mục hiện hữu, không phải công cụ xét duyệt tín dụng mới" và mục Hạn chế. |
 | T5 | Soạn slide phần Dữ liệu. | Soạn slide phần Mô hình; kiểm tra chạy lại dự án từ một bản clone sạch theo README. | Soạn slide phần XAI và Demo. |

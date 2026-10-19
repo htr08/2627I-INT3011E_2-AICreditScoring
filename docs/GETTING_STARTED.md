@@ -1,6 +1,6 @@
-# Hướng dẫn chạy pipeline — Branch `ml/baseline-logreg-dt`
+# Hướng dẫn chạy pipeline
 
-Branch này huấn luyện hai mô hình baseline (Logistic Regression + Decision Tree) với 5-fold CV và log toàn bộ kết quả vào MLflow.
+Tài liệu mô tả từng bước chạy pipeline: huấn luyện các mô hình với 5-fold CV, hiệu chuẩn, xuất mô hình cuối, chạy demo, kiểm thử; kết quả huấn luyện được log vào MLflow. Tổng quan dự án và kết quả: [README.md](../README.md).
 
 ---
 
@@ -92,8 +92,8 @@ python scripts/run_pipeline.py --mode scorecard # Logistic Scorecard (WoE): CV +
 python scripts/run_pipeline.py --mode tune      # Optuna: LightGBM (± monotonic), CatBoost (~1 giờ)
 python scripts/run_pipeline.py --mode tune --tune-model lightgbm --max-trials 5   # chạy thử nhanh
 python scripts/run_pipeline.py --mode tuned --include-sex  # Mô hình đã tuning có SEX, đối chiếu fairness (~5 phút)
-python scripts/run_pipeline.py --mode summary   # Tổng hợp bảng so sánh sơ bộ (CV mean ± std) các mô hình
-python scripts/run_pipeline.py --mode calibrate # Hiệu chuẩn Platt/Isotonic, ngưỡng chi phí, điểm PDO; lưu models/final_model.pkl
+python scripts/run_pipeline.py --mode summary   # In bảng so sánh sơ bộ (CV mean ± std); ghi reports/model_comparison.csv
+python scripts/run_pipeline.py --mode calibrate # Hiệu chuẩn Platt/Isotonic, ngưỡng chi phí, điểm PDO; ghi đè reports/calibration_cv_*.csv và models/final_model.pkl
 python scripts/run_pipeline.py --mode final-model # Chỉ lưu models/final_model.pkl (Platt + ngưỡng đã khóa 0.09), không ghi đè bảng calibration
 python scripts/run_pipeline.py --include-sex    # bản đối chiếu fairness (có SEX, không đăng ký model)
 ```
@@ -201,20 +201,4 @@ Bước 5: mlflow ui             →  http://127.0.0.1:5000
 
 ## Cấu hình
 
-Tất cả tham số nằm trong [`configs/config.yaml`](configs/config.yaml):
-
-```yaml
-random_state: 42
-
-data:
-  raw_path: data/raw/UCI_Credit_Card.csv
-  target_col: default.payment.next.month
-  splits_dir: data/splits
-  train_ratio: 0.6
-  valid_ratio: 0.2
-  test_ratio: 0.2
-
-mlflow:
-  tracking_dir: mlruns
-  experiment_name: credit_scoring
-```
+Tham số dùng chung (chia dữ liệu, MLflow, tuning, nhóm đặc trưng, calibration và ngưỡng, ma trận chi phí, phân tầng rủi ro, PDO) nằm trong [`configs/config.yaml`](../configs/config.yaml).

@@ -94,7 +94,7 @@ SHAP `TreeExplainer` trên margin, nhân hệ số Platt `a` để tổng đóng
 
 - Chênh lệch Nam/Nữ trên Valid không lặp lại trên Test; tỷ lệ vỡ nợ thực tế của Nam cao hơn Nữ ở cả hai tập (Valid 25.5% so với 19.9%; Test 23.4% so với 21.3%).
 - AUC theo nhóm tuổi: nhóm >50 có AUC thấp nhất trên Valid (0.759, N = 448) nhưng khoảng tin cậy chồng lấn với nhóm 30–50; trên Test không có nhóm nào khác biệt rõ.
-- Ở ngưỡng 0.09, mô hình gắn cờ khoảng 73% hồ sơ nên DIR theo flag rate bị nén. Chỉ số bổ sung DIR của tỷ lệ không bị flag của nhóm >50 là 0.70 (Valid) và 0.64 (Test), ngoài dải. Định nghĩa DIR cần nhóm thống nhất; chỉ số bổ sung này không thuộc Charter.
+- Ở ngưỡng 0.09, mô hình gắn cờ khoảng 73% hồ sơ nên DIR theo flag rate bị nén. Chỉ số bổ sung DIR của tỷ lệ không bị flag của nhóm >50 là 0.70 (Valid) và 0.64 (Test), ngoài dải. Chỉ số theo Charter là DIR theo flag rate; chỉ số bổ sung này không thuộc Charter và chỉ để tham chiếu.
 
 ---
 

@@ -36,7 +36,7 @@ Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bản
 > **Ghi chú kỹ thuật & Phương pháp tính:**
 > - **Nguồn số liệu:** Cột AUC CV đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`). Các cột (Test) đo trên tập Test 6.000 hồ sơ, chỉ có cho mô hình cuối và baseline Logistic (mục 2.1); các mô hình còn lại không được đánh giá trên Test. Gini, KS, PR-AUC và Brier theo CV của mọi mô hình nằm ở bảng phụ (mục 3).
 > - **Ngưỡng & cách tính chỉ số (Recall, Precision, F1):** Đo tại ngưỡng cố định `threshold = 0.5` độc lập trên từng fold kiểm định (validation fold), sau đó lấy trung bình (`mean`) và độ lệch chuẩn mẫu (`std`, `ddof=1`) qua 5 fold. Cách tính này khớp hoàn toàn với quy trình `run_cv` và `summarize_folds` log vào MLflow (không gộp chung toàn bộ OOF dự đoán trước khi tính).
-> - **Lược bỏ cột thời gian train:** Cột thời gian huấn luyện đã được lược bỏ khỏi các bảng so sánh theo khuyến nghị của reviewer. Nguyên nhân: MLflow không lưu trữ đồng nhất một metric thời gian cho tất cả các mô hình và thời gian chạy wall-clock phụ thuộc cấu hình phần cứng cục bộ. Với quy mô 18.000 mẫu (mọi mô hình đều hoàn thành dưới 1 phút), thời gian train không phải là tiêu chí đánh đổi hay KPI chọn mô hình. Độ trễ suy luận (Inference Latency trên từng hồ sơ) sẽ được đo lường chuẩn xác ở Tuần 3 khi triển khai ứng dụng demo.
+> - **Lược bỏ cột thời gian train:** Cột thời gian huấn luyện đã được lược bỏ khỏi các bảng so sánh. Nguyên nhân: MLflow không lưu trữ đồng nhất một metric thời gian cho tất cả các mô hình và thời gian chạy wall-clock phụ thuộc cấu hình phần cứng cục bộ. Với quy mô 18.000 mẫu (mọi mô hình đều hoàn thành dưới 1 phút), thời gian train không phải là tiêu chí đánh đổi hay KPI chọn mô hình.
 > - **Thống nhất số liệu Boosting default:** Bảng chính, bảng phụ và bảng kiểm định paired t-test sử dụng đồng bộ số liệu tính trên cùng fold-cache Optuna T4 (LightGBM default: 0.7805 ± 0.0077; CatBoost default: 0.7844 ± 0.0074). Bộ số này bảo đảm khớp toán học hoàn toàn giữa chênh lệch từng fold trong bảng paired và điểm CV trung bình.
 > - **Brier score:** Brier Test của mô hình cuối là Brier sau Platt scaling. Brier Test của baseline là Brier thô vì baseline không được hiệu chuẩn, nên hai giá trị không hoàn toàn ngang hàng; AUC, Gini, KS và PR-AUC không phụ thuộc hiệu chuẩn. Brier CV (thô) của mọi mô hình: mục 3.
 > - **Đóng băng tập Test:** Đã chạy đúng một lượt ở Tuần 3 – T3 cho LightGBM tuned + Monotonic và baseline Logistic; xem mục 2.1. Không dùng Test để chọn giữa các mô hình phụ.
@@ -77,8 +77,8 @@ Tổng hợp toàn bộ 17 cấu hình mô hình và kỹ thuật đã thử ngh
 | LightGBM + SMOTE (in-fold) | Imbalance Experiments | 0.7776 ± 0.0058 | 0.5551 | 0.4216 | 0.5440 | 0.1383 | 0.4309 | 0.6222 | 0.5092 | Thí nghiệm phụ SMOTE: AUC giảm |
 | CatBoost + SMOTE (in-fold) | Imbalance Experiments | 0.7747 ± 0.0057 | 0.5493 | 0.4192 | 0.5410 | 0.1386 | 0.4156 | 0.6130 | 0.4953 | Thí nghiệm phụ SMOTE: AUC giảm |
 | LightGBM tuned (Optuna) | Optuna Tuned (T4) | 0.7898 ± 0.0077 | 0.5796 | 0.4439 | 0.5650 | 0.1327 | 0.3774 | 0.6696 | 0.4828 | Tuned 37 trials, plateau stopping |
-| LightGBM tuned + Monotonic | Optuna Tuned (T4) - Candidate | 0.7906 ± 0.0074 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | 0.3774 | 0.6748 | 0.4839 | ỨNG VIÊN CHÍNH: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu |
-| CatBoost tuned (Optuna) | Optuna Tuned (T4) - Candidate | 0.7911 ± 0.0073 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | 0.3674 | 0.6754 | 0.4759 | ỨNG VIÊN ĐỐI CHỨNG: AUC CV cao nhất toàn dự án (0.7911) |
+| LightGBM tuned + Monotonic | Optuna Tuned (T4) - Candidate | 0.7906 ± 0.0074 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | 0.3774 | 0.6748 | 0.4839 | Ứng viên chính: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu |
+| CatBoost tuned (Optuna) | Optuna Tuned (T4) - Candidate | 0.7911 ± 0.0073 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | 0.3674 | 0.6754 | 0.4759 | Ứng viên đối chứng: AUC CV cao nhất toàn dự án (0.7911) |
 | CatBoost tuned + Monotonic (đối chiếu) | Optuna Tuned (T4) | 0.7910 ± 0.0077 | 0.5820 | 0.4434 | 0.5632 | 0.1328 | 0.3722 | 0.6675 | 0.4780 | Thời gian train lâu ~5x so với CatBoost thường |
 | LightGBM tuned + Monotonic (with SEX) | Fairness Comparison (T5) | 0.7907 ± 0.0075 | 0.5814 | 0.4465 | 0.5634 | 0.1327 | 0.3769 | 0.6708 | 0.4828 | SEX chỉ chiếm 0.17% feature importance; delta AUC +0.0001 |
 | CatBoost tuned (with SEX) | Fairness Comparison (T5) | 0.7912 ± 0.0079 | 0.5824 | 0.4461 | 0.5681 | 0.1326 | 0.3692 | 0.6723 | 0.4767 | SEX chỉ chiếm 0.54% feature importance; delta AUC +0.0001 |
@@ -101,7 +101,7 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
 | CatBoost tuned vs LightGBM monotonic | +0.0001 | +0.0015 | +0.0011 | -0.0008 | +0.0004 | +0.0005 | 0.0009 | [-0.0007, +0.0016] | 1.148 | 0.31501 | Không |
 
 ### Nhận xét kiểm định thống kê:
-- **Cả CatBoost tuned và LightGBM tuned + monotonic đều vượt trội hơn hẳn Baseline trên 100% các fold (5/5 fold dương):**
+- **Cả CatBoost tuned và LightGBM tuned + monotonic đều vượt Baseline trên 5/5 fold:**
   - `CatBoost tuned`: Chênh lệch AUC trung bình **+0.0166** (dao động từ +0.0091 đến +0.0236), $t = 6.810$, $p = 0.00243 < 0.01$.
   - `LightGBM monotonic`: Chênh lệch AUC trung bình **+0.0161** (dao động từ +0.0077 đến +0.0244), $t = 5.928$, $p = 0.00406 < 0.01$.
 - **Cả hai mô hình Boosting mặc định đều cải thiện AUC so với Baseline LR:**
@@ -124,7 +124,7 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
 | CatBoost tuned (Optuna) | Đạt mục tiêu (0.7911 ≥ 0.79) | Đạt sàn (0.5822 ≥ 0.57) | Chưa đạt sàn (0.4452 < 0.45) | Đạt sàn (0.5675 ≥ 0.56) |
 
 ### Đánh giá KPI Charter:
-1. **KPI chính (tương đối):** Cả hai mô hình boosting sau tuning đều vượt baseline vượt bậc trên mọi fold với $p < 0.005$, đáp ứng đầy đủ tiêu chí vượt baseline có ý nghĩa thống kê.
+1. **KPI chính (tương đối):** Cả hai mô hình boosting sau tuning đều vượt baseline trên mọi fold với $p < 0.005$, đáp ứng đầy đủ tiêu chí vượt baseline có ý nghĩa thống kê.
 2. **KPI tham chiếu (tuyệt đối):**
    - **ROC-AUC:** Cả CatBoost tuned (0.7911) và LightGBM monotonic (0.7906) đều **vượt mốc mục tiêu $\ge 0.79$**.
    - **Gini:** Đạt mốc sàn $\ge 0.57$ (CatBoost 0.5822, LightGBM 0.5813), tiệm cận mốc mục tiêu 0.59.
@@ -145,28 +145,28 @@ Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic
 - **Logistic Regression baseline (0.7745 ± 0.0116):** Hoạt động ổn định, độ phân tách khá, thời gian train tức thì (~2.5s). Là mốc chuẩn tin cậy.
 - **Logistic Scorecard WoE (0.7790 ± 0.0083):**
   - Về mặt số học, AUC trung bình cao hơn baseline Logistic thông thường một lượng nhỏ (+0.0045 AUC, 0.7790 vs 0.7745), tuy nhiên **chênh lệch này không có ý nghĩa thống kê** ($t = 1.072, p = 0.344 > 0.05$; khoảng tin cậy 95% $[-0.0072, +0.0162]$ chứa giá trị 0; và trên thực tế có 2/5 fold Scorecard thấp hơn LR).
-  - Ưu thế cốt lõi của Scorecard không nằm ở việc vượt trội về năng lực phân tách, mà nằm ở **tính minh bạch và chuẩn mực quản trị rủi ro ngân hàng**: Nhờ coarse classing và ràng buộc dấu, toàn bộ hệ số và điểm số hoàn toàn tuân thủ logic nghiệp vụ ngân hàng (không bị đảo điểm phi lý).
-  - Điểm số PDO tính toán trực tiếp từ bảng điểm thuộc tính, minh bạch 100%. Là chuẩn mực so sánh tuyệt vời cho các mô hình học máy phức tạp.
+  - Ưu thế cốt lõi của Scorecard không nằm ở việc vượt trội về năng lực phân tách, mà nằm ở **tính minh bạch và chuẩn mực quản trị rủi ro ngân hàng**: Nhờ coarse classing và ràng buộc dấu, hệ số có dấu phù hợp logic nghiệp vụ ngân hàng và điểm số của biến liên tục đơn điệu theo giá trị.
+  - Điểm số PDO tính trực tiếp từ bảng điểm thuộc tính nên truy vết được từng thành phần; là mốc so sánh minh bạch cho các mô hình học máy phức tạp.
 
 ### 6.2. Nhóm Tree Ensembles Mặc định (RF & XGBoost)
-- **Random Forest (0.7667) và XGBoost (0.7597):** Khi chưa tinh chỉnh tham số, cả hai mô hình cây đều có AUC thấp hơn Logistic Regression. Nguyên nhân do XGBoost mặc định dễ overfit trên dữ liệu bảng tín dụng có nhiều biến nhiễu.
+- **Random Forest (0.7667) và XGBoost (0.7597):** Khi chưa tinh chỉnh tham số, cả hai mô hình cây đều có AUC thấp hơn Logistic Regression. Nguyên nhân có thể nằm ở cấu hình mặc định: XGBoost `max_depth=4` đạt ROC-AUC CV khoảng 0.788 (`shap_agreement.md`).
 
 ### 6.3. Nhóm Gradient Boosting Hiện đại (LightGBM & CatBoost)
-- **Năng lực phân tách vượt trội ngay từ bản Default:** LightGBM default (0.7805) và CatBoost default (0.7844) đều tự động vượt mốc sàn Charter 0.78 ngay khi chưa tuning.
+- **Năng lực phân tách cao ngay từ bản Default:** LightGBM default (0.7805) và CatBoost default (0.7844) đều vượt mốc sàn Charter 0.78 khi chưa tuning.
 - **Sau khi tuning Optuna:**
   - Cả hai mô hình hội tụ về kiến trúc: cây nông (num_leaves 10–11, depth 6), learning rate nhỏ (0.005–0.011), regularization mạnh (`reg_lambda` 8.87, `l2_leaf_reg` 16.76).
-  - Cải thiện ROC-AUC lên **0.7906 – 0.7911**, thiết lập đỉnh hiệu năng mới.
+  - Cải thiện ROC-AUC lên **0.7906 – 0.7911**, mức cao nhất của dự án.
 
 ### 6.4. Bài học từ các Thử nghiệm Kỹ thuật Mở rộng
 1. **Ràng buộc đơn điệu (Monotonic constraints):**
    - Trên LightGBM, monotonic constraints không làm giảm AUC (0.7906 vs 0.7898), thời gian train gần như không đổi (~14s). Đảm bảo tính đơn điệu nghiệp vụ: khách hàng trễ hạn nhiều hơn hoặc dùng hạn mức cao hơn sẽ không bao giờ bị giảm xác suất rủi ro.
    - Trên CatBoost, monotonic constraints làm thời gian huấn luyện tăng gấp 5 lần (~318s) mà không tăng thêm AUC.
 2. **Xử lý mất cân bằng (Class Weighting vs SMOTE):**
-   - `class_weight`: Giúp Recall vọt lên ~61% ở ngưỡng 0.5, nhưng làm Brier score tăng vọt từ 0.133 lên 0.168 (méo xác suất nghiêm trọng).
-   - `SMOTE in-fold`: Không cải thiện AUC (0.774–0.777), làm tăng thời gian huấn luyện gấp đôi. Khẳng định kết luận Charter: không dùng SMOTE cho mô hình chính thức.
+   - `class_weight`: Recall tăng lên ~61% ở ngưỡng 0.5, nhưng Brier score tăng từ 0.133 lên 0.168 (xác suất bị méo).
+   - `SMOTE in-fold`: Không cải thiện AUC (0.774–0.777), làm tăng thời gian huấn luyện gấp đôi. Phù hợp kết luận Charter: không dùng SMOTE cho mô hình chính thức.
 3. **Đối chiếu Biến nhạy cảm SEX:**
    - Việc thêm biến SEX vào mô hình chỉ làm thay đổi AUC trung bình $+0.0001$, tỷ trọng đóng góp của SEX trong feature importance chỉ đạt $0.17\%$ (LightGBM) và $0.54\%$ (CatBoost).
-   - Khẳng định tính đúng đắn của chính sách Charter: **loại bỏ biến SEX khỏi mô hình chính thức mà không làm suy giảm hiệu năng**.
+   - Kết quả phù hợp chính sách Charter: **loại bỏ biến SEX khỏi mô hình chính thức mà không làm suy giảm hiệu năng**.
 
 ---
 
@@ -176,10 +176,10 @@ Thành viên B (ML Engineer) đề xuất với nhóm tại cuộc họp Review 
 
 1. **Ứng viên Mô hình Chính (Primary Model): `LightGBM tuned + Monotonic constraints`**
    - **Lý do lựa chọn:**
-     - Hiệu năng phân tách xuất sắc: ROC-AUC **0.7906 ± 0.0074**, vượt mốc mục tiêu Charter 0.79.
+     - Hiệu năng phân tách cao: ROC-AUC **0.7906 ± 0.0074**, vượt mốc mục tiêu Charter 0.79.
      - Tính nhất quán nghiệp vụ: 11 biến trễ hạn và tỷ lệ sử dụng hạn mức được bảo đảm đơn điệu tăng tuyệt đối.
-     - Tốc độ vượt trội: Thời gian huấn luyện 5 fold chỉ mất **14 giây** (nhanh hơn CatBoost 5 lần và nhanh hơn CatBoost monotonic 22 lần).
-     - Tương thích giải thích SHAP: Kiến trúc tương thích hoàn hảo với `shap.TreeExplainer` cho live demo Streamlit mà không lo giật lag.
+     - Tốc độ huấn luyện: 5 fold mất **14 giây** (nhanh hơn CatBoost 5 lần và nhanh hơn CatBoost monotonic 22 lần).
+     - Tương thích giải thích SHAP: Tương thích với `shap.TreeExplainer`, thời gian tính SHAP đủ ngắn cho demo Streamlit.
 2. **Ứng viên Mô hình Đối chứng (Benchmark / Secondary): `CatBoost tuned`**
    - Giữ làm mô hình đối chứng năng lực thuật toán (AUC cao nhất 0.7911) và kiểm tra độ ổn định trên tập Valid/Test.
 3. **Mô hình Chuẩn mực Nghiệp vụ: `Logistic Scorecard (WoE)`**
@@ -189,11 +189,11 @@ Thành viên B (ML Engineer) đề xuất với nhóm tại cuộc họp Review 
 
 ## 8. Lệnh Tái lập & Kiểm thử
 
-Để hiển thị lại bảng so sánh sơ bộ hoặc xuất lại báo cáo:
+Bảng máy đọc `reports/model_comparison.csv` và các bảng so sánh, kiểm định cặp, đối chiếu KPI (in ra console) được sinh bằng:
 ```bash
 python scripts/compare_models.py
 # hoặc
 python scripts/run_pipeline.py --mode summary
 ```
 
-File dữ liệu máy đọc (machine-readable) được lưu tại: `reports/model_comparison.csv`.
+Lệnh này chỉ ghi `reports/model_comparison.csv`; báo cáo này được viết tay (gồm kết quả Test ở mục 2.1) nên script không ghi đè. Kết quả Test lấy từ `scripts/evaluate_final_test.py`, đã chạy một lần (xem `reports/test_evaluation/`).

@@ -55,6 +55,6 @@ Chi tiết số liệu và khoảng tin cậy: `test_metrics.csv` và `test_comp
 
 ## Dự đoán từng hồ sơ cho phân tích fairness
 
-`scripts/export_test_predictions.py` ghi `test_predictions.csv` (ID, y_true, PD thô, PD sau Platt, PD của baseline) sau khi đánh giá ở trên hoàn tất, phục vụ phần fairness của thành viên A (`project_plan.md` mục 4.3, Tuần 3 – T3). Đây là lượt chấm Test thứ hai, chỉ để xuất đầu ra của các mô hình đã đánh giá, dùng đúng mô hình, calibrator và ngưỡng đã khóa; không tính lại chỉ số hiệu năng và không thay đổi quyết định nào.
+`scripts/export_test_predictions.py` ghi `test_predictions.csv` (ID, y_true, PD thô, PD sau Platt, PD của baseline) sau khi đánh giá ở trên hoàn tất, phục vụ phần fairness (`project_plan.md` mục 4.3, Tuần 3 – T3). Đây là lượt chấm Test thứ hai, chỉ để xuất đầu ra của các mô hình đã đánh giá, dùng đúng mô hình, calibrator và ngưỡng đã khóa; không tính lại chỉ số hiệu năng và không thay đổi quyết định nào.
 
 Mô hình huấn luyện lại khớp mô hình đã đánh giá: PD trung bình của ba đầu ra lệch dưới 0.0001 so với `test_metrics.csv`; flag rate ở ngưỡng 0.09 là 72.90% (bảng trên: 72.98%, chênh 5 hồ sơ). Marker `test_predictions_export.json` chặn chạy lại. `test_predictions.csv` bị gitignore theo quy ước không commit dữ liệu.

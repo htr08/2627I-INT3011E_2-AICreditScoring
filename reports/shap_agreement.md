@@ -1,6 +1,6 @@
 # Mức đồng thuận về tầm quan trọng đặc trưng giữa XGBoost, LightGBM và Logistic Regression
 
-Phân tích tại `notebooks/03_shap_agreement.ipynb`; hàm tính tại `src/explain.py`. Tập Test không được sử dụng._
+Phân tích tại `notebooks/03_shap_agreement.ipynb`; hàm tính tại `src/explain.py`. Tập Test không được sử dụng.
 
 ## 1. Tóm tắt
 
@@ -110,7 +110,7 @@ Spearman giữa giá trị biến và đóng góp SHAP của chính biến đó 
 - Mẫu giải thích gồm 3.000 dòng của tập Valid; khoảng tin cậy chỉ phản ánh biến thiên theo khách hàng trong mẫu này, không phản ánh biến thiên theo cách chia dữ liệu hay theo hạt giống huấn luyện.
 - Hai họ mô hình dùng hai định nghĩa kỳ vọng nền khác nhau (`tree_path_dependent` so với background Train), nên base value không so sánh trực tiếp; phép so sánh chỉ dùng tỷ trọng, thứ hạng và tương quan.
 - Chiều tác động mô tả quan hệ trung bình trong mô hình, không phải quan hệ nhân quả, và chịu ảnh hưởng của tương quan giữa các biến.
-- Định nghĩa "rủi ro cao" theo phân vị 75% của PD LightGBM, độc lập với ngưỡng cảnh báo cuối cùng (chưa chốt tại thời điểm viết).
+- Định nghĩa "rủi ro cao" theo phân vị 75% của PD LightGBM, độc lập với ngưỡng cảnh báo (ngưỡng vận hành 0.09 được chốt sau khi viết phân tích này).
 
 ## 6. Tái lập
 

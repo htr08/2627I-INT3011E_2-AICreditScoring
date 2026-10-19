@@ -53,7 +53,7 @@ Trong bộ dữ liệu Taiwan, hai nhóm `PAY_1..6` và `BILL_AMT1..6` có tươ
 | Toàn cục | `shap.plots.beeswarm` (summary), `shap.plots.bar` (mean \|SHAP\|) | Lấy mẫu 2.000–5.000 dòng. |
 | Tương tác | `shap.plots.scatter` (dependence), tham số `color=` chọn biến tương tác | Top 5–10 đặc trưng. |
 | Cục bộ | `shap.plots.waterfall`, `shap.plots.force` | Các ca Duyệt, Từ chối và Ca biên. Waterfall phù hợp hơn khi hiển thị trên Streamlit. |
-| Reason codes | Tự tính | Cộng SHAP theo nhóm; chọn 3–4 nhóm có $\phi > 0$ lớn nhất (làm tăng rủi ro). |
+| Reason codes | Tự tính | Cộng SHAP theo nhóm; chọn các nhóm có $\phi > 0$ lớn nhất (làm tăng rủi ro); quy tắc chính thức: `xai_report.md` mục 4.1. |
 
 ---
 
@@ -226,11 +226,11 @@ Binning, WoE và IV đều sử dụng target, nên phải được fit trong t�
 
 | Lựa chọn | Ưu điểm | Hạn chế |
 |---|---|---|
-| **optbinning** (`BinningProcess`, `Scorecard`) | Binning tối ưu có ràng buộc đơn điệu, hỗ trợ giá trị đặc biệt, có sẵn Scorecard và PDO, tương thích sklearn Pipeline | Chưa có trong `requirements.txt`; cần bổ sung, pin phiên bản và đồng bộ với cả nhóm |
+| **optbinning** (`BinningProcess`, `Scorecard`) | Binning tối ưu có ràng buộc đơn điệu, hỗ trợ giá trị đặc biệt, có sẵn Scorecard và PDO, tương thích sklearn Pipeline | Không được dùng trong bản cài đặt cuối (xem `logistic_scorecard.md`) |
 | **scorecardpy** | Đơn giản, phổ biến trong tài liệu hướng dẫn | Không theo API của sklearn, khó tích hợp vào Pipeline/CV |
 | **Tự cài đặt** transformer WoE | Kiểm soát hoàn toàn, không thêm dependency | Tốn thời gian, dễ sai ở các trường hợp biên |
 
-Phương án đề xuất: `optbinning`, do Thành viên A (phụ trách Scorecard) đánh giá và quyết định.
+Phương án đề xuất ban đầu: `optbinning`; bản Scorecard cuối không dùng thư viện này (`logistic_scorecard.md`).
 
 ### 3.6. Liên hệ giữa Scorecard và SHAP
 
@@ -299,8 +299,8 @@ Bảng quy đổi (chưa clip):
 
 **Về thang 300–850.** Điểm 300 tương ứng PD ≈ 99,85% và điểm 850 tương ứng PD ≈ 0,0003%. Với PD thực tế của bộ dữ liệu (khoảng 1%–90%), điểm nằm trong khoảng ~420–640, do đó thao tác clip hầu như không xảy ra và thang hiển thị 300–850 sẽ có phần lớn diện tích không được sử dụng. Hai hướng xử lý:
 
-1. Giữ nguyên tham số (đúng chuẩn, dễ diễn giải) và hiển thị thanh điểm trên demo theo khoảng giá trị thực tế.
-2. Tăng PDO (ví dụ 40–50) để trải rộng điểm. Đây là lựa chọn về cách hiển thị, không ảnh hưởng đến mô hình, và cần được thống nhất giữa các thành viên trước khi ghi vào `configs/config.yaml`.
+1. Giữ nguyên tham số (đúng chuẩn, dễ diễn giải) và hiển thị thanh điểm trên demo theo khoảng giá trị thực tế. **Đã chọn** (clip 300–850, thanh hiển thị 420–640; xem `project_plan.md` mục 3.5d).
+2. Tăng PDO (ví dụ 40–50) để trải rộng điểm. Đây là lựa chọn về cách hiển thị, không ảnh hưởng đến mô hình.
 
 ### 4.4. Phân bổ điểm cho từng thuộc tính (Scorecard)
 
@@ -353,7 +353,7 @@ Các trường hợp kiểm thử đề xuất: `pd_to_score(1/51) == 600`; đi�
 2. **Thang giải thích thống nhất:** SHAP được quy về logit(PD) đã hiệu chuẩn (nhân hệ số Platt $a$), sau đó quy sang điểm bằng hệ số $-\text{Factor}$. `src/explain.py` cần chuẩn hóa shape đầu ra (RandomForest trả về `(n, M, 2)`).
 3. **Reason codes theo nhóm đặc trưng** thay vì từng biến, do tương quan cao trong `PAY_x` và `BILL_AMT_x`.
 4. **Scorecard:** bổ sung `optbinning` vào `requirements.txt`; binning/WoE fit trong từng fold; kiểm tra dấu hệ số (kỳ vọng âm).
-5. **PDO:** giữ tham số 600 tại odds 50:1, PDO = 20 như kế hoạch; điểm thực tế nằm trong khoảng ~420–640. Cách hiển thị thang điểm trên demo cần được thống nhất (mục 4.3) trước khi đưa các tham số vào `configs/config.yaml`.
+5. **PDO:** giữ tham số 600 tại odds 50:1, PDO = 20 như kế hoạch; điểm thực tế nằm trong khoảng ~420–640. Cách hiển thị thang điểm trên demo đã chốt ở mục 4.3.
 
 ## Tài liệu tham khảo
 
