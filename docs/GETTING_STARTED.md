@@ -1,6 +1,6 @@
-# Hướng dẫn chạy pipeline — Branch `ml/baseline-logreg-dt`
+# Hướng dẫn chạy pipeline
 
-Branch này huấn luyện hai mô hình baseline (Logistic Regression + Decision Tree) với 5-fold CV và log toàn bộ kết quả vào MLflow.
+Tài liệu mô tả từng bước chạy pipeline: huấn luyện các mô hình với 5-fold CV, hiệu chuẩn, xuất mô hình cuối, chạy demo, kiểm thử; kết quả huấn luyện được log vào MLflow. Tổng quan dự án và kết quả: [README.md](../README.md).
 
 ---
 
@@ -201,20 +201,4 @@ Bước 5: mlflow ui             →  http://127.0.0.1:5000
 
 ## Cấu hình
 
-Tất cả tham số nằm trong [`configs/config.yaml`](configs/config.yaml):
-
-```yaml
-random_state: 42
-
-data:
-  raw_path: data/raw/UCI_Credit_Card.csv
-  target_col: default.payment.next.month
-  splits_dir: data/splits
-  train_ratio: 0.6
-  valid_ratio: 0.2
-  test_ratio: 0.2
-
-mlflow:
-  tracking_dir: mlruns
-  experiment_name: credit_scoring
-```
+Tham số dùng chung (chia dữ liệu, MLflow, tuning, nhóm đặc trưng, calibration và ngưỡng, ma trận chi phí, phân tầng rủi ro, PDO) nằm trong [`configs/config.yaml`](../configs/config.yaml).
