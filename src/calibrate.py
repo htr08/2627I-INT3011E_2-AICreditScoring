@@ -25,6 +25,7 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score
 from sklearn.pipeline import Pipeline
+from sklearn.model_selection import StratifiedKFold
 
 from src.config import PROJECT_ROOT, load_config
 from src.evaluate import (
@@ -318,15 +319,22 @@ def compare_calibrations_on_valid(
     cost_fp: float = 0.05,
     ead: Optional[np.ndarray] = None,
     n_bins: int = 10,
+    cv_splits: int = 5,
+    random_state: int = 42,
+    ead_for_cv: Optional[np.ndarray] = None,
 ) -> Dict[str, Any]:
-    """So sánh toàn diện Uncalibrated vs Platt Scaling vs Isotonic Regression trên tập Valid.
+    """So sánh hiệu chuẩn in-sample và out-of-fold trên các dự đoán của tập Valid.
 
     - Platt scaling: fit tay trên output_margin.
     - Isotonic regression: fit trên raw probabilities.
-    - Đánh giá theo Brier score, Log Loss, ROC-AUC, ECE.
-    - Tìm ngưỡng tối ưu theo ma trận chi phí FN/FP.
+    - Trả về chỉ số fit/đo cùng mẫu trong ``methods`` để tương thích báo cáo cũ.
+    - ``cv_methods`` chứa xác suất OOF từ StratifiedKFold cho đánh giá công bằng hơn.
+    - ``cv_cost`` chọn ngưỡng trong phần train của từng fold rồi đánh giá chi phí trên
+      phần giữ lại; đây là CV của toàn bộ quy trình chọn calibrator/ngưỡng.
     """
     y_val = np.asarray(y_val, dtype=int).ravel()
+    if cv_splits < 2:
+        raise ValueError("cv_splits phải từ 2 trở lên.")
 
     # Trích xuất margin và xác suất thô
     margin_val = predict_margin(base_pipeline, X_val)
@@ -372,6 +380,120 @@ def compare_calibrations_on_valid(
             "cm_at_05": cm_05,
             "y_prob": p,
         }
+
+    # OOF probabilities: each calibrator is fitted without the fold it predicts.
+    cv = StratifiedKFold(n_splits=cv_splits, shuffle=True, random_state=random_state)
+    cv_probs = {name: np.empty_like(y_val, dtype=float) for name in methods}
+    fold_costs: Dict[str, List[Dict[str, float]]] = {
+        "platt": [], "isotonic": []
+    }
+    fold_costs_ead: Dict[str, List[Dict[str, float]]] = {
+        "platt": [], "isotonic": []
+    }
+    fold_metrics: Dict[str, List[Dict[str, float]]] = {
+        name: [] for name in methods
+    }
+    ead_arr = None if ead is None else np.asarray(ead, dtype=float).ravel()
+    ead_cv_arr = None if ead_for_cv is None else np.asarray(ead_for_cv, dtype=float).ravel()
+    if ead_cv_arr is not None and len(ead_cv_arr) != len(y_val):
+        raise ValueError("ead_for_cv phải có cùng số phần tử với y_val.")
+    for train_idx, test_idx in cv.split(margin_val, y_val):
+        platt_fold = PlattCalibrator().fit(margin_val[train_idx], y_val[train_idx])
+        iso_fold = IsotonicCalibrator().fit(p_raw[train_idx], y_val[train_idx])
+        fold_predictions = {
+            "uncalibrated": p_raw[test_idx],
+            "platt": platt_fold.transform(margin_val[test_idx]),
+            "isotonic": iso_fold.transform(p_raw[test_idx]),
+        }
+        for name, predictions in fold_predictions.items():
+            cv_probs[name][test_idx] = predictions
+            fold_metrics[name].append(
+                evaluate_calibration(y_val[test_idx], predictions, n_bins=n_bins)
+            )
+
+        fold_ead_train = None if ead_arr is None else ead_arr[train_idx]
+        fold_ead_test = None if ead_arr is None else ead_arr[test_idx]
+        fold_ead_cv_train = None if ead_cv_arr is None else ead_cv_arr[train_idx]
+        fold_ead_cv_test = None if ead_cv_arr is None else ead_cv_arr[test_idx]
+        for name in ("platt", "isotonic"):
+            p_train = platt_fold.transform(margin_val[train_idx]) if name == "platt" else iso_fold.transform(p_raw[train_idx])
+            p_test = fold_predictions[name]
+            threshold, _ = find_optimal_threshold(
+                y_val[train_idx], p_train, cost_fn=cost_fn, cost_fp=cost_fp,
+                ead=fold_ead_train,
+            )
+            heldout_cost = compute_expected_cost(
+                y_val[test_idx], p_test, threshold=threshold,
+                cost_fn=cost_fn, cost_fp=cost_fp, ead=fold_ead_test,
+            )
+            heldout_cost_05 = compute_expected_cost(
+                y_val[test_idx], p_test, threshold=0.5,
+                cost_fn=cost_fn, cost_fp=cost_fp, ead=fold_ead_test,
+            )
+            fold_costs[name].append({
+                "threshold": float(threshold),
+                "heldout_cost": float(heldout_cost),
+                "heldout_cost_at_05": float(heldout_cost_05),
+            })
+
+            if ead_cv_arr is not None:
+                threshold_ead, _ = find_optimal_threshold(
+                    y_val[train_idx], p_train, cost_fn=cost_fn, cost_fp=cost_fp,
+                    ead=fold_ead_cv_train,
+                )
+                heldout_cost_ead = compute_expected_cost(
+                    y_val[test_idx], p_test, threshold=threshold_ead,
+                    cost_fn=cost_fn, cost_fp=cost_fp, ead=fold_ead_cv_test,
+                )
+                fold_costs_ead[name].append({
+                    "threshold": float(threshold_ead),
+                    "heldout_cost": float(heldout_cost_ead),
+                    "heldout_cost_at_05": float(compute_expected_cost(
+                        y_val[test_idx], p_test, threshold=0.5,
+                        cost_fn=cost_fn, cost_fp=cost_fp, ead=fold_ead_cv_test,
+                    )),
+                })
+
+    metric_names = ("brier_score", "log_loss", "roc_auc", "ece")
+    results["cv_methods"] = {}
+    for name, p in cv_probs.items():
+        fold_values = fold_metrics[name]
+        results["cv_methods"][name] = {
+            "metrics": {
+                metric: float(np.mean([fold[metric] for fold in fold_values]))
+                for metric in metric_names
+            },
+            "metric_std": {
+                metric: float(np.std([fold[metric] for fold in fold_values], ddof=1))
+                for metric in metric_names
+            },
+            "fold_metrics": fold_values,
+            "y_prob": p,
+        }
+    results["cv_cost"] = {
+        name: {
+            "folds": values,
+            "threshold_mean": float(np.mean([v["threshold"] for v in values])),
+            "threshold_std": float(np.std([v["threshold"] for v in values], ddof=1)),
+            "heldout_cost_mean": float(np.mean([v["heldout_cost"] for v in values])),
+            "heldout_cost_std": float(np.std([v["heldout_cost"] for v in values], ddof=1)),
+            "heldout_cost_at_05_mean": float(np.mean([v["heldout_cost_at_05"] for v in values])),
+            "heldout_cost_at_05_std": float(np.std([v["heldout_cost_at_05"] for v in values], ddof=1)),
+        }
+        for name, values in fold_costs.items()
+    }
+    results["cv_cost_ead"] = {
+        name: {
+            "folds": values,
+            "threshold_mean": float(np.mean([v["threshold"] for v in values])),
+            "threshold_std": float(np.std([v["threshold"] for v in values], ddof=1)),
+            "heldout_cost_mean": float(np.mean([v["heldout_cost"] for v in values])),
+            "heldout_cost_std": float(np.std([v["heldout_cost"] for v in values], ddof=1)),
+            "heldout_cost_at_05_mean": float(np.mean([v["heldout_cost_at_05"] for v in values])),
+            "heldout_cost_at_05_std": float(np.std([v["heldout_cost_at_05"] for v in values], ddof=1)),
+        }
+        for name, values in fold_costs_ead.items()
+    } if ead_cv_arr is not None else {}
 
     return results
 
@@ -548,6 +670,8 @@ def run_calibration_experiments(
         models_to_run["logistic_regression"] = lr_pipe
 
     experiments: Dict[str, Any] = {}
+    cv_metric_rows: List[Dict[str, Any]] = []
+    cv_cost_rows: List[Dict[str, Any]] = []
     for name, pipe in models_to_run.items():
         comp = compare_calibrations_on_valid(
             pipe,
@@ -556,7 +680,23 @@ def run_calibration_experiments(
             cost_fn=cost_fn,
             cost_fp=cost_fp,
             ead=None,
+            ead_for_cv=ead_val,
         )
+        for method_name, cv_result in comp["cv_methods"].items():
+            cv_metric_rows.append({
+                "model": name,
+                "method": method_name,
+                **cv_result["metrics"],
+                **{f"{metric}_std": value for metric, value in cv_result["metric_std"].items()},
+            })
+        for method_name, cost_result in comp["cv_cost"].items():
+            cv_cost_rows.append({"model": name, "method": method_name, "weighting": "unit", **{
+                key: value for key, value in cost_result.items() if key != "folds"
+            }})
+        for method_name, cost_result in comp["cv_cost_ead"].items():
+            cv_cost_rows.append({"model": name, "method": method_name, "weighting": "EAD", **{
+                key: value for key, value in cost_result.items() if key != "folds"
+            }})
         # Bổ sung tính toán có EAD cho phương pháp Platt và Uncalibrated
         p_platt = comp["methods"]["platt"]["y_prob"]
         th_ead, min_cost_ead = find_optimal_threshold(
@@ -611,6 +751,11 @@ def run_calibration_experiments(
         }
 
         experiments[name] = comp
+
+    if cv_metric_rows:
+        pd.DataFrame(cv_metric_rows).to_csv(reports_dir / "calibration_cv_metrics.csv", index=False)
+    if cv_cost_rows:
+        pd.DataFrame(cv_cost_rows).to_csv(reports_dir / "calibration_cv_cost.csv", index=False)
 
     if save_figures:
         _plot_calibration_figures(experiments, fig_dir, y_val)

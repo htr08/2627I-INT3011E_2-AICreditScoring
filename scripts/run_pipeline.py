@@ -219,7 +219,10 @@ def main():
 
         logging.info("Chạy quy trình hiệu chuẩn xác suất và phân tích ngưỡng chi phí (Tuần 3 - T2)...")
         results = run_calibration_experiments()
-        logging.info("Hoàn tất hiệu chuẩn! Đã cập nhật kết quả và lưu biểu đồ vào reports/figures/.")
+        logging.info(
+            "Hoàn tất hiệu chuẩn; OOF metrics/cost được lưu ở reports/calibration_cv_metrics.csv "
+            "và reports/calibration_cv_cost.csv; biểu đồ ở reports/figures/."
+        )
     else:
         if args.mode in ("baseline", "all"):
             train_baseline(include_sex=args.include_sex)

@@ -21,6 +21,8 @@ env/
 !reports/feature_importance.csv
 !reports/correlation_drop.csv
 !reports/model_comparison.csv
+!reports/calibration_cv_metrics.csv
+!reports/calibration_cv_cost.csv
 *.tsv
 *.xls
 *.xlsx
