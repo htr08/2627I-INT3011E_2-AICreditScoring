@@ -56,3 +56,29 @@ feature_groups:
   nhan_khau_hoc:
     label: Nhân khẩu học
     variables: [AGE_BIN, EDUCATION, MARRIAGE]
+
+# Calibration trên tập Valid (Tuần 3 – T2, project_plan.md mục 3.5e & 4.3).
+# Ưu tiên Platt scaling (fit tay trên output_margin) để bảo toàn tính cộng tính của SHAP.
+calibration:
+  method: platt             # 'platt' hoặc 'isotonic'
+  val_split: valid
+  n_bins: 10
+
+# Ma trận chi phí (Project Charter mục 1.3 & 7).
+# Chi phí FN ≈ LGD * EAD (LGD = 0.45); Chi phí FP ≈ 5% * EAD (0.05).
+# Tỷ lệ chi phí chuẩn FN:FP = 9:1; khảo sát độ nhạy từ 3:1 đến 10:1.
+cost_matrix:
+  cost_fn: 0.45
+  cost_fp: 0.05
+  lgd: 0.45
+  lost_revenue_rate: 0.05
+  fn_fp_ratios: [3.0, 5.0, 7.0, 9.0, 10.0]
+
+# Quy đổi PD sang điểm tín dụng theo PDO (Project Charter mục 1.3 & project_plan.md mục 3.5d).
+# Base Score = 600 tại odds 50:1, PDO = 20, thang hiển thị [300, 850].
+scoring:
+  base_score: 600
+  base_odds: 50.0
+  pdo: 20.0
+  clip_min: 300
+  clip_max: 850

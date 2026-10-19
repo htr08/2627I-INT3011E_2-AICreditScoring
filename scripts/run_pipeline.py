@@ -280,9 +280,9 @@ def main():
     parser = argparse.ArgumentParser(description="Credit Scoring Pipeline Runner")
     parser.add_argument(
         "--mode",
-        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "summary", "tune", "tuned"],
+        choices=["baseline", "advanced", "boosting", "imbalance", "all", "woe", "scorecard", "compare", "summary", "tune", "tuned", "calibrate"],
         default="baseline",
-        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'summary' (bảng so sánh sơ bộ các mô hình), 'tune' (Optuna) or 'tuned' (huấn luyện lại mô hình đã tuning)",
+        help="Pipeline mode to run: 'baseline' (default), 'advanced' (RF & XGBoost), 'boosting' (LGBM & CatBoost), 'imbalance' (class_weight & SMOTE), 'all', 'woe', 'scorecard', 'compare' (So sánh Scorecard vs Black-box), 'summary' (bảng so sánh sơ bộ các mô hình), 'tune' (Optuna) 'tuned' (huấn luyện lại mô hình đã tuning) or 'calibrate' (hiệu chuẩn & chọn ngưỡng chi phí)",
     )
     parser.add_argument(
         "--include-sex",
@@ -332,6 +332,15 @@ def main():
             tune_model(args.tune_model, monotone=args.monotone, max_trials=args.max_trials, timeout=args.timeout)
         else:
             tune_best_models(max_trials=args.max_trials, timeout=args.timeout)
+    elif args.mode == "calibrate":
+        from src.calibrate import run_calibration_experiments
+
+        logging.info("Chạy quy trình hiệu chuẩn xác suất và phân tích ngưỡng chi phí (Tuần 3 - T2)...")
+        results = run_calibration_experiments()
+        logging.info(
+            "Hoàn tất hiệu chuẩn; OOF metrics/cost được lưu ở reports/calibration_cv_metrics.csv "
+            "và reports/calibration_cv_cost.csv; biểu đồ ở reports/figures/."
+        )
     else:
         if args.mode in ("baseline", "all"):
             train_baseline(include_sex=args.include_sex)

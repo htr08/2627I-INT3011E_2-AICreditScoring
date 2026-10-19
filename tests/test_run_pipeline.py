@@ -79,3 +79,13 @@ def test_run_pipeline_cli_compare_keeps_scorecard_vs_blackbox(monkeypatch):
     mock_compare.assert_called_once_with(include_sex=True)
     mock_summary.assert_not_called()
 
+
+def test_run_pipeline_cli_dispatch_calibrate(monkeypatch):
+    """--mode calibrate gọi run_calibration_experiments."""
+    mock_cal = MagicMock()
+    monkeypatch.setattr("src.calibrate.run_calibration_experiments", mock_cal)
+    monkeypatch.setattr(sys, "argv", ["run_pipeline.py", "--mode", "calibrate"])
+
+    main()
+    mock_cal.assert_called_once()
+
