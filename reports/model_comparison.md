@@ -176,7 +176,7 @@ Thành viên B (ML Engineer) đề xuất với nhóm tại cuộc họp Review 
 ```bash
 python scripts/compare_models.py
 # hoặc
-python scripts/run_pipeline.py --mode compare
+python scripts/run_pipeline.py --mode summary
 ```
 
 File dữ liệu máy đọc (machine-readable) được lưu tại: `reports/model_comparison.csv`.

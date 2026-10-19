@@ -6,7 +6,7 @@ Deliverables: Báo cáo bảng so sánh sơ bộ hiệu năng 5-fold Stratified 
 
 Usage:
     python scripts/compare_models.py
-    python scripts/run_pipeline.py --mode compare
+    python scripts/run_pipeline.py --mode summary
 """
 
 import sys
@@ -633,7 +633,7 @@ def generate_markdown_report() -> str:
     md.append("```bash")
     md.append("python scripts/compare_models.py")
     md.append("# hoặc")
-    md.append("python scripts/run_pipeline.py --mode compare")
+    md.append("python scripts/run_pipeline.py --mode summary")
     md.append("```")
     md.append("")
     md.append("File dữ liệu máy đọc (machine-readable) được lưu tại: `reports/model_comparison.csv`.")
