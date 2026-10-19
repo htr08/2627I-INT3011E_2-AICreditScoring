@@ -20,6 +20,9 @@ BILL_VOLATILITY = _GROUPS["bien_dong_du_no"]["label"]
 DEMOGRAPHICS = _GROUPS["nhan_khau_hoc"]["label"]
 FEATURE_GROUPS = [spec["label"] for spec in _GROUPS.values()]
 
+# Reason codes: nhóm có |đóng góp| dưới mức này (điểm PDO) không được coi là lý do (reports/xai_report.md mục 4).
+MIN_REASON_POINTS = 1.0
+
 
 @dataclass(frozen=True)
 class Explanation:
@@ -28,3 +31,5 @@ class Explanation:
     pd: float
     base_logit: float
     contributions: dict[str, float]
+    # Đóng góp theo biến gốc (cùng thang logit), chỉ có với mô hình cuối; None với baseline và mock.
+    variable_contributions: dict[str, float] | None = None
