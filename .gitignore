@@ -81,3 +81,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Dự đoán Test của mô hình đã khóa (chỉ gồm ID, nhãn, PD) phục vụ báo cáo fairness trên Test
+!reports/test_evaluation/test_predictions.csv
