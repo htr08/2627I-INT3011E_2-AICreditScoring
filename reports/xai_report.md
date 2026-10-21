@@ -1,8 +1,5 @@
 # Báo cáo XAI và Hệ thống Lý do Cảnh báo (Reason Codes)
 
-_Tuần 3 – T4: Thành viên C (Explainability & Product)_
-
----
 
 ## 1. Mục tiêu và phạm vi
 
