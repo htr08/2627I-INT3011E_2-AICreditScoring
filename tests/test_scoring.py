@@ -1,7 +1,16 @@
 import numpy as np
 import pytest
 
-from src.scoring import base_points, pd_to_score, shap_to_points
+from src.scoring import (
+    base_points,
+    calculate_ks_statistic,
+    compare_models_performance,
+    evaluate_model_metrics,
+    export_scorecard_to_dict,
+    pd_to_score,
+    scorecard_points_table,
+    shap_to_points,
+)
 
 
 def test_base_odds_maps_to_base_score():
@@ -33,7 +42,6 @@ def test_scorecard_points_sum_to_pdo_score(raw_credit_df):
     """Điểm nền + điểm từng thuộc tính của một hồ sơ = pd_to_score(PD của scorecard) chưa clip."""
     from src.features import build_features
     from src.pipelines import build_scorecard_pipeline
-    from src.scoring import scorecard_points_table
 
     X, y = build_features(raw_credit_df)
     pipe = build_scorecard_pipeline().fit(X, y)
@@ -50,3 +58,45 @@ def test_scorecard_points_sum_to_pdo_score(raw_credit_df):
     assert set(table["feature"]) - {"(base)"} == set(model.selected_features_)
     # Mọi hệ số WoE cùng dấu âm: thuộc tính rủi ro cao hơn (WoE thấp hơn) không được nhiều điểm hơn.
     assert (table.loc[table["feature"] != "(base)", "coef"] < 0).all()
+
+
+def test_calculate_ks_and_evaluate_model_metrics():
+    y_true = np.array([0, 0, 0, 1, 1, 1])
+    y_prob = np.array([0.1, 0.2, 0.3, 0.7, 0.8, 0.9])
+    ks = calculate_ks_statistic(y_true, y_prob)
+    assert ks == pytest.approx(1.0)
+
+    metrics = evaluate_model_metrics(y_true, y_prob)
+    assert metrics["AUC"] == pytest.approx(1.0)
+    assert metrics["Gini"] == pytest.approx(1.0)
+    assert metrics["KS"] == pytest.approx(1.0)
+
+
+def test_compare_models_performance(raw_credit_df):
+    from src.features import build_features
+    from src.pipelines import build_scorecard_pipeline
+
+    X, y = build_features(raw_credit_df)
+    pipe = build_scorecard_pipeline().fit(X, y)
+
+    res_df = compare_models_performance({"Scorecard": pipe}, X, y)
+    assert not res_df.empty
+    assert "Model" in res_df.columns
+    assert "AUC" in res_df.columns
+    assert "Gini" in res_df.columns
+    assert "KS" in res_df.columns
+    assert res_df.loc[0, "Model"] == "Scorecard"
+
+
+def test_export_scorecard_to_dict(raw_credit_df):
+    from src.features import build_features
+    from src.pipelines import build_scorecard_pipeline
+
+    X, y = build_features(raw_credit_df)
+    pipe = build_scorecard_pipeline().fit(X, y)
+    table = scorecard_points_table(pipe)
+    card_dict = export_scorecard_to_dict(table)
+
+    assert "base_points" in card_dict
+    assert "features" in card_dict
+    assert isinstance(card_dict["features"], dict)
