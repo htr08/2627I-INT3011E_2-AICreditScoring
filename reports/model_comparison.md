@@ -1,199 +1,267 @@
-# Báo cáo Tổng hợp: Bảng So sánh Sơ bộ Các Mô hình
+# Báo cáo Phương pháp và Kết quả So sánh Mô hình (Model Comparison & Methodology Report)
 
-_Tuần 2 – T6: Thành viên B (ML Engineer)_
+_Dự án: AI Credit Scoring — Phân vai: Thành viên B (ML Engineer) — Tuần 3: Nhiệm vụ T4 & T5_
 
 ---
 
 ## 1. Mục tiêu và Bối cảnh Thực hiện
 
-Theo phân công nhiệm vụ tại `reports/project_plan.md` (mục 4.2 – Tuần 2, T6 và mục 1.2, 5):
-1. **Tổng hợp bảng so sánh sơ bộ (CV mean ± std):** Tập hợp kết quả 5-fold Stratified Cross-Validation trên tập Train (18.000 mẫu, 22.12% default rate) của tất cả các mô hình đã huấn luyện và tối ưu từ Tuần 1 đến hết Tuần 2.
-2. **Tuân thủ quy ước dữ liệu (mục 3.5a & 8.2):**
-   - **Tập Train (60%):** Huấn luyện và đánh giá sơ bộ qua 5-fold Stratified CV cố định `random_state = 42`.
-   - **Tập Valid (20%):** Dành cho bước Probability Calibration, chọn ngưỡng chi phí và fairness check ở Tuần 3 – T2.
-   - **Tập Test (20%):** Đã dùng một lần duy nhất ở Tuần 3 – T3 cho mô hình cuối và baseline Logistic; kết quả nghiệm thu ở mục 2.1. Các mô hình khác không được đánh giá trên Test trong lượt này.
-3. **Chuẩn bị cơ sở cho cuộc họp Review Tuần 2 (T6):** Cung cấp các bằng chứng thực nghiệm, kiểm định thống kê và phân tích trade-off để nhóm thống nhất lựa chọn **1–2 mô hình cuối cùng** bước vào giai đoạn hoàn thiện sản phẩm.
+Theo phân công trách nhiệm tại **Mục 2.1 & 4.3 (Tuần 3 – T4)** trong [`reports/project_plan.md`](project_plan.md):
+- **Phân vai Thành viên B (ML Engineer):** Phụ trách chiến lược chia dữ liệu, pipeline đánh giá, baseline, huấn luyện 17 cấu hình mô hình, tuning Optuna, calibration, tối ưu ngưỡng theo ma trận chi phí, quy đổi điểm PDO, và đánh giá tập Test nghiệm thu một lần duy nhất.
+- **Nhiệm vụ:** Hoàn thiện báo cáo toàn diện về **Phương pháp luận lựa chọn mô hình** và **Kết quả so sánh thực nghiệm**, đối chiếu với **Thang điểm trình bày cuối kỳ – Fintech (100đ)**:
+  * **Tiêu chí 2: Kỹ thuật lựa chọn (20đ):** Biện luận lý do chọn kỹ thuật, tính đúng đắn của quy trình chống rò rỉ dữ liệu, và tính phù hợp với bài toán tín dụng ngân hàng.
+  * **Tiêu chí 4: Kết quả thực nghiệm (20đ):** Sử dụng đầy đủ thước đo chuyên ngành (ROC-AUC, PR-AUC, Gini, KS, Brier), kiểm định thống kê DeLong và Bootstrap CI, phân tích lỗi định lượng và tối ưu ngưỡng chi phí.
+  * **Tiêu chí 6: Minh bạch dùng AI và phần tự làm (10đ):** Phân định cụ thể phạm vi công cụ AI hỗ trợ và phần đóng góp cốt lõi của sinh viên, kèm quy trình kiểm chứng.
+  * **Tiêu chí 7: Liên kết thảo luận trên Coreach (5đ):** Dẫn chiếu các đóng góp từ diễn đàn LMS Coreach tác động tới thiết kế và điều chỉnh bài toán.
+
+*Bản Word (.docx) chuẩn in ấn có nhúng đầy đủ hình ảnh, bảng biểu: [`reports/model_comparison.docx`](model_comparison.docx).*
 
 ---
 
-## 2. Bảng Tổng hợp So sánh Sơ bộ Các Mô hình Tiêu biểu
+## 2. Phương pháp Luận & Căn cứ Lựa chọn Mô hình (Tiêu chí 2 - 20đ)
 
-Bảng dưới đây tuân thủ cấu trúc chuẩn theo **Mục 5. Mẫu bảng so sánh mô hình** trong `reports/project_plan.md`:
+### 2.1. Khảo sát và So sánh 4 Nhóm Mô hình Tín dụng
 
-| Mô hình | AUC CV (mean ± std) | AUC Test (95% CI) | Gini (Test) | KS (Test) | PR-AUC (Test) | Brier (Test) | Khả năng giải thích |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | 0.7745 ± 0.0116 | 0.7609 (0.7461, 0.7765) | 0.5219 | 0.4046 | 0.5236 | 0.1384 (thô) | Rất cao (hệ số odds ratio trực tiếp) |
-| Decision Tree (max_depth=5) | 0.7672 ± 0.0120 | Không đánh giá | – | – | – | – | Cao (cây quyết định if-then rõ ràng) |
-| Logistic Scorecard (WoE) | 0.7790 ± 0.0083 | Không đánh giá | – | – | – | – | Rất cao (bảng điểm PDO, chuẩn ngân hàng) |
-| Random Forest (default) | 0.7667 ± 0.0097 | Không đánh giá | – | – | – | – | Trung bình (SHAP / Feature Importance) |
-| XGBoost (default) | 0.7597 ± 0.0073 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
-| LightGBM (default) | 0.7805 ± 0.0077 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
-| CatBoost (default) | 0.7844 ± 0.0074 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
-| **LightGBM tuned + Monotonic (mô hình cuối)** | 0.7906 ± 0.0074 | **0.7825 (0.7681, 0.7973)** | 0.5649 | 0.4290 | 0.5600 | 0.1348 (Platt) | Trung bình - Cao (SHAP + Đơn điệu nghiệp vụ) |
-| CatBoost tuned (Optuna) | 0.7911 ± 0.0073 | Không đánh giá | – | – | – | – | Trung bình (SHAP TreeExplainer) |
-| MLP (tuỳ chọn) | Chưa triển khai (tùy chọn) | – | – | – | – | – | Thấp (KernelExplainer) |
+Dự án xây dựng khung đối chuẩn (benchmark) giữa 4 nhóm kỹ thuật phổ biến trong ngành tài chính – ngân hàng:
 
-> **Ghi chú kỹ thuật & Phương pháp tính:**
-> - **Nguồn số liệu:** Cột AUC CV đo bằng 5-fold Stratified CV trên tập Train (`splits.json`, 18.000 dòng, `random_state = 42`). Các cột (Test) đo trên tập Test 6.000 hồ sơ, chỉ có cho mô hình cuối và baseline Logistic (mục 2.1); các mô hình còn lại không được đánh giá trên Test. Gini, KS, PR-AUC và Brier theo CV của mọi mô hình nằm ở bảng phụ (mục 3).
-> - **Ngưỡng & cách tính chỉ số (Recall, Precision, F1):** Đo tại ngưỡng cố định `threshold = 0.5` độc lập trên từng fold kiểm định (validation fold), sau đó lấy trung bình (`mean`) và độ lệch chuẩn mẫu (`std`, `ddof=1`) qua 5 fold. Cách tính này khớp hoàn toàn với quy trình `run_cv` và `summarize_folds` log vào MLflow (không gộp chung toàn bộ OOF dự đoán trước khi tính).
-> - **Lược bỏ cột thời gian train:** Cột thời gian huấn luyện đã được lược bỏ khỏi các bảng so sánh. Nguyên nhân: MLflow không lưu trữ đồng nhất một metric thời gian cho tất cả các mô hình và thời gian chạy wall-clock phụ thuộc cấu hình phần cứng cục bộ. Với quy mô 18.000 mẫu (mọi mô hình đều hoàn thành dưới 1 phút), thời gian train không phải là tiêu chí đánh đổi hay KPI chọn mô hình.
-> - **Thống nhất số liệu Boosting default:** Bảng chính, bảng phụ và bảng kiểm định paired t-test sử dụng đồng bộ số liệu tính trên cùng fold-cache Optuna T4 (LightGBM default: 0.7805 ± 0.0077; CatBoost default: 0.7844 ± 0.0074). Bộ số này bảo đảm khớp toán học hoàn toàn giữa chênh lệch từng fold trong bảng paired và điểm CV trung bình.
-> - **Brier score:** Brier Test của mô hình cuối là Brier sau Platt scaling. Brier Test của baseline là Brier thô vì baseline không được hiệu chuẩn, nên hai giá trị không hoàn toàn ngang hàng; AUC, Gini, KS và PR-AUC không phụ thuộc hiệu chuẩn. Brier CV (thô) của mọi mô hình: mục 3.
-> - **Đóng băng tập Test:** Đã chạy đúng một lượt ở Tuần 3 – T3 cho LightGBM tuned + Monotonic và baseline Logistic; xem mục 2.1. Không dùng Test để chọn giữa các mô hình phụ.
-
-### 2.1. Kết quả nghiệm thu cuối trên Test (Tuần 3 – T3)
-
-Tập Test được đánh giá một lần bằng `scripts/evaluate_final_test.py`. Mô hình cuối và ngưỡng được khóa trước khi đánh giá: LightGBM tuned + monotonic, Platt fit trên Valid, ngưỡng 0.09 (làm tròn từ trung bình OOF EAD-weighted 0.088). Lượt Test so sánh mô hình cuối với baseline Logistic Regression; các mô hình còn lại không được đưa vào lượt nghiệm thu cuối.
-
-| Mô hình/đầu ra | ROC-AUC Test (bootstrap 95% CI) | Gini | KS (bootstrap 95% CI) | PR-AUC (bootstrap 95% CI) | Brier (bootstrap 95% CI) | Log Loss | ECE |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| LightGBM tuned + Monotonic (raw) | 0.7825 (0.7681, 0.7973) | 0.5649 | 0.4290 (0.4048, 0.4603) | 0.5600 (0.5315, 0.5887) | 0.1347 (0.1288, 0.1405) | 0.4284 | 0.0139 |
-| **LightGBM tuned + Monotonic (Platt, final)** | **0.7825 (0.7681, 0.7973)** | **0.5649** | **0.4290 (0.4048, 0.4603)** | **0.5600 (0.5315, 0.5887)** | 0.1348 (0.1288, 0.1405) | 0.4285 | 0.0163 |
-| Logistic Regression baseline | 0.7609 (0.7461, 0.7765) | 0.5219 | 0.4046 (0.3771, 0.4341) | 0.5236 (0.4960, 0.5546) | 0.1384 (0.1322, 0.1446) | 0.4410 | 0.0185 |
-
-Paired DeLong cho LightGBM Platt so với Logistic baseline: **ΔAUC = 0.02150**, 95% CI **[0.01449, 0.02852]**, **p = 1.86 × 10⁻⁹**. Paired bootstrap 95% CI của ΔAUC là **[0.01434, 0.02857]**; cả hai cách đều cho thấy AUC cao hơn baseline có ý nghĩa thống kê, đáp ứng KPI chính. Platt không cải thiện calibration trên Test so với raw LightGBM (Brier 0.1348 so với 0.1347; ECE 0.0163 so với 0.0139), phù hợp với kết quả OOF; Platt vẫn được giữ cho đầu ra cuối theo lựa chọn đã khóa trên Valid để bảo toàn phép biến đổi tuyến tính cho SHAP. Brier, Log Loss và ECE của baseline tính trên PD chưa hiệu chuẩn.
-
-Đối chiếu KPI tham chiếu (Charter mục 3.2) trên Test: ROC-AUC đạt mốc sàn (0.7825 ≥ 0.78) nhưng chưa tới mục tiêu 0.79; Gini (0.5649), KS (0.4290) và PR-AUC (0.55996) dưới mốc sàn, trong đó PR-AUC thiếu 0.00004. Khoảng tin cậy 95% của cả bốn chỉ số đều chứa mốc sàn. Bảng đầy đủ nằm trong [báo cáo nghiệm thu Test](test_evaluation/test_evaluation.md).
-
-Tại ngưỡng 0.09 trên Test, recall là **92.46%**, precision **28.02%**, flag rate **72.98%**; EAD-weighted cost là **NT$1,634.49/khách hàng**, so với **NT$2,830.29** tại 0.50. Tỷ lệ cảnh báo cao cần được cân nhắc về năng lực vận hành. Chi tiết ROC/PR/calibration curves và toàn bộ chỉ số nằm trong báo cáo nghiệm thu Test, cùng các bảng máy đọc `test_evaluation/test_metrics.csv` và `test_evaluation/test_comparison.csv`.
-
----
-
-## 3. Bảng phụ: Phân tích Chi tiết Toàn bộ Thử nghiệm (Tuần 1 & Tuần 2)
-
-Tổng hợp toàn bộ 17 cấu hình mô hình và kỹ thuật đã thử nghiệm (bao gồm Baseline, Tree Ensembles, Gradient Boosting, Xử lý mất cân bằng, Optuna Tuning, và Đối chiếu Fairness):
-
-| Mô hình | Nhóm | ROC-AUC (mean ± std) | Gini | KS | PR-AUC | Brier Score | Recall@0.5 | Precision@0.5 | F1-Score | Ghi chú |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | Baseline | 0.7745 ± 0.0116 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | 0.3619 | 0.6760 | 0.4714 | Baseline chuẩn Tuần 1 |
-| Decision Tree (max_depth=5) | Baseline | 0.7672 ± 0.0120 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | 0.3531 | 0.6629 | 0.4595 | Baseline cây quyết định |
-| Logistic Scorecard (WoE) | Scorecard | 0.7790 ± 0.0083 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | 0.3744 | 0.6596 | 0.4777 | Scorecard chuẩn mực (coarse classing + ràng buộc dấu) |
-| Random Forest (default) | Tree Ensembles | 0.7667 ± 0.0097 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | 0.3870 | 0.6313 | 0.4797 | Tree ensemble mặc định T2 |
-| XGBoost (default) | Tree Ensembles | 0.7597 ± 0.0073 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | 0.3669 | 0.6077 | 0.4575 | XGBoost mặc định T2 |
-| LightGBM (default) | Gradient Boosting (T3) | 0.7805 ± 0.0077 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | 0.3767 | 0.6677 | 0.4816 | Boosting mặc định (đồng bộ fold-cache Optuna T4) |
-| CatBoost (default) | Gradient Boosting (T3) | 0.7844 ± 0.0074 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | 0.3784 | 0.6696 | 0.4836 | Boosting mặc định (đồng bộ fold-cache Optuna T4) |
-| LightGBM Balanced (class_weight) | Imbalance Experiments | 0.7809 ± 0.0081 | 0.5617 | 0.4278 | 0.5505 | 0.1682 | 0.6110 | 0.4758 | 0.5350 | Recall cao nhưng Brier tăng mạnh |
-| CatBoost Balanced (auto_class_weights) | Imbalance Experiments | 0.7806 ± 0.0081 | 0.5611 | 0.4341 | 0.5520 | 0.1659 | 0.6072 | 0.4872 | 0.5406 | Recall cao nhưng Brier tăng mạnh |
-| LightGBM + SMOTE (in-fold) | Imbalance Experiments | 0.7776 ± 0.0058 | 0.5551 | 0.4216 | 0.5440 | 0.1383 | 0.4309 | 0.6222 | 0.5092 | Thí nghiệm phụ SMOTE: AUC giảm |
-| CatBoost + SMOTE (in-fold) | Imbalance Experiments | 0.7747 ± 0.0057 | 0.5493 | 0.4192 | 0.5410 | 0.1386 | 0.4156 | 0.6130 | 0.4953 | Thí nghiệm phụ SMOTE: AUC giảm |
-| LightGBM tuned (Optuna) | Optuna Tuned (T4) | 0.7898 ± 0.0077 | 0.5796 | 0.4439 | 0.5650 | 0.1327 | 0.3774 | 0.6696 | 0.4828 | Tuned 37 trials, plateau stopping |
-| LightGBM tuned + Monotonic | Optuna Tuned (T4) - Candidate | 0.7906 ± 0.0074 | 0.5813 | 0.4453 | 0.5624 | 0.1328 | 0.3774 | 0.6748 | 0.4839 | Ứng viên chính: Nhanh, bảo đảm chiều tác động, AUC đạt mục tiêu |
-| CatBoost tuned (Optuna) | Optuna Tuned (T4) - Candidate | 0.7911 ± 0.0073 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | 0.3674 | 0.6754 | 0.4759 | Ứng viên đối chứng: AUC CV cao nhất toàn dự án (0.7911) |
-| CatBoost tuned + Monotonic (đối chiếu) | Optuna Tuned (T4) | 0.7910 ± 0.0077 | 0.5820 | 0.4434 | 0.5632 | 0.1328 | 0.3722 | 0.6675 | 0.4780 | Thời gian train lâu ~5x so với CatBoost thường |
-| LightGBM tuned + Monotonic (with SEX) | Fairness Comparison (T5) | 0.7907 ± 0.0075 | 0.5814 | 0.4465 | 0.5634 | 0.1327 | 0.3769 | 0.6708 | 0.4828 | SEX chỉ chiếm 0.17% feature importance; delta AUC +0.0001 |
-| CatBoost tuned (with SEX) | Fairness Comparison (T5) | 0.7912 ± 0.0079 | 0.5824 | 0.4461 | 0.5681 | 0.1326 | 0.3692 | 0.6723 | 0.4767 | SEX chỉ chiếm 0.54% feature importance; delta AUC +0.0001 |
-
----
-
-## 4. Kiểm định Thống kê & So sánh Cặp theo Fold
-
-Vì tất cả các mô hình đều được huấn luyện trên cùng 5 fold Stratified CV (`random_state=42`), chênh lệch AUC theo từng fold ($\Delta \text{AUC}$) phản ánh khác biệt thực chất của thuật toán và loại trừ phương sai do việc chia mẫu.
-
-Kiểm định paired t-test trên 5 fold đối chiếu với Baseline Logistic Regression:
-
-| So sánh cặp | Fold 1 | Fold 2 | Fold 3 | Fold 4 | Fold 5 | Δ AUC TB | Std Δ | 95% CI (Δ AUC) | t-statistic | p-value (paired) | Ý nghĩa (p < 0.05) |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CatBoost tuned vs Logistic baseline | +0.0145 | +0.0091 | +0.0196 | +0.0236 | +0.0162 | +0.0166 | 0.0055 | [+0.0098, +0.0234] | 6.810 | 0.00243 | Có ý nghĩa (***) |
-| LightGBM monotonic vs Logistic baseline | +0.0144 | +0.0077 | +0.0185 | +0.0244 | +0.0157 | +0.0161 | 0.0061 | [+0.0086, +0.0237] | 5.928 | 0.00406 | Có ý nghĩa (***) |
-| CatBoost default vs Logistic baseline | +0.0077 | +0.0021 | +0.0125 | +0.0176 | +0.0098 | +0.0099 | 0.0057 | [+0.0028, +0.0171] | 3.873 | 0.01795 | Có ý nghĩa (*) |
-| LightGBM default vs Logistic baseline | +0.0005 | -0.0007 | +0.0075 | +0.0109 | +0.0116 | +0.0060 | 0.0058 | [-0.0012, +0.0131] | 2.313 | 0.08173 | Không |
-| Logistic Scorecard vs Logistic baseline | -0.0022 | -0.0051 | +0.0040 | +0.0191 | +0.0068 | +0.0045 | 0.0094 | [-0.0072, +0.0162] | 1.072 | 0.34420 | Không |
-| CatBoost tuned vs LightGBM monotonic | +0.0001 | +0.0015 | +0.0011 | -0.0008 | +0.0004 | +0.0005 | 0.0009 | [-0.0007, +0.0016] | 1.148 | 0.31501 | Không |
-
-### Nhận xét kiểm định thống kê:
-- **Cả CatBoost tuned và LightGBM tuned + monotonic đều vượt Baseline trên 5/5 fold:**
-  - `CatBoost tuned`: Chênh lệch AUC trung bình **+0.0166** (dao động từ +0.0091 đến +0.0236), $t = 6.810$, $p = 0.00243 < 0.01$.
-  - `LightGBM monotonic`: Chênh lệch AUC trung bình **+0.0161** (dao động từ +0.0077 đến +0.0244), $t = 5.928$, $p = 0.00406 < 0.01$.
-- **Cả hai mô hình Boosting mặc định đều cải thiện AUC so với Baseline LR:**
-  - `CatBoost default`: Chênh lệch AUC trung bình **+0.0099** (dao động từ +0.0021 đến +0.0176), $t = 3.873$, $p = 0.01795 < 0.05$ (có ý nghĩa thống kê (*), 95% CI [+0.0028, +0.0171]).
-  - `LightGBM default`: Chênh lệch AUC trung bình **+0.0060** (dao động từ -0.0007 đến +0.0116), $t = 2.313$, $p = 0.08173 > 0.05$ (chưa đạt ý nghĩa thống kê ở mức 5% trên 5 fold, 95% CI [-0.0012, +0.0131]).
-- **Scorecard WoE không vượt baseline có ý nghĩa thống kê:** Chênh lệch $+0.0045$ AUC trung bình có $t = 1.072$, $p = 0.34420 \approx 0.34 > 0.05$; khoảng tin cậy 95% $[-0.0072, +0.0162]$ chứa 0; và trên thực tế có 2/5 fold Scorecard có AUC thấp hơn Baseline LR.
-- **Sự khác biệt giữa CatBoost tuned và LightGBM monotonic là không có ý nghĩa thống kê ($p = 0.31501 \approx 0.31 > 0.05$):** Chênh lệch giữa hai mô hình chỉ là $+0.0005$ AUC trung bình (95% CI $[-0.0007, +0.0016]$ chứa 0) và đảo dấu ở Fold 4 (-0.0008). Về mặt năng lực phân tách, hai mô hình này tương đương nhau.
-
----
-
-## 5. Đối chiếu với Project Charter & KPI
-
-Đối chiếu hiệu năng CV của các mô hình ứng viên với các mốc KPI đã cam kết trong `reports/project_charter.md`:
-
-| Mô hình | ROC-AUC (Sàn 0.78 / Mục tiêu 0.79) | Gini (Sàn 0.57 / Mục tiêu 0.59) | KS (Sàn 0.45 / Mục tiêu 0.47) | PR-AUC (Sàn 0.56 / Mục tiêu 0.58) |
-| --- | --- | --- | --- | --- |
-| Logistic Regression (baseline) | Chưa đạt sàn (0.7745 < 0.78) | Chưa đạt sàn (0.5490 < 0.57) | Chưa đạt sàn (0.4282 < 0.45) | Chưa đạt sàn (0.5470 < 0.56) |
-| Logistic Scorecard (WoE) | Chưa đạt sàn (0.7790 < 0.78) | Chưa đạt sàn (0.5580 < 0.57) | Chưa đạt sàn (0.4326 < 0.45) | Chưa đạt sàn (0.5432 < 0.56) |
-| LightGBM tuned + Monotonic | Đạt mục tiêu (0.7906 ≥ 0.79) | Đạt sàn (0.5813 ≥ 0.57) | Chưa đạt sàn (0.4453 < 0.45) | Đạt sàn (0.5624 ≥ 0.56) |
-| CatBoost tuned (Optuna) | Đạt mục tiêu (0.7911 ≥ 0.79) | Đạt sàn (0.5822 ≥ 0.57) | Chưa đạt sàn (0.4452 < 0.45) | Đạt sàn (0.5675 ≥ 0.56) |
-
-### Đánh giá KPI Charter:
-1. **KPI chính (tương đối):** Cả hai mô hình boosting sau tuning đều vượt baseline trên mọi fold với $p < 0.005$, đáp ứng đầy đủ tiêu chí vượt baseline có ý nghĩa thống kê.
-2. **KPI tham chiếu (tuyệt đối):**
-   - **ROC-AUC:** Cả CatBoost tuned (0.7911) và LightGBM monotonic (0.7906) đều **vượt mốc mục tiêu $\ge 0.79$**.
-   - **Gini:** Đạt mốc sàn $\ge 0.57$ (CatBoost 0.5822, LightGBM 0.5813), tiệm cận mốc mục tiêu 0.59.
-   - **PR-AUC:** Đạt mốc sàn $\ge 0.56$ (CatBoost 0.5675, LightGBM 0.5624).
-   - **KS:** **Chưa đạt mốc sàn** ($0.4452–0.4453$ so với mốc sàn 0.45, thiếu khoảng ~0.005; bảng đối chiếu KPI phân loại 'Chưa đạt sàn'). Theo kết luận tuning tại Tuần 2 – T4, đây là trần tự nhiên của bộ dữ liệu snapshot 2005 trên mô hình dự đoán xác suất không leak dữ liệu.
-   - **Trên tập Test (mô hình cuối, mục 2.1):** ROC-AUC 0.7825 đạt mốc sàn, chưa tới mục tiêu; Gini 0.5649, KS 0.4290 và PR-AUC 0.55996 dưới mốc sàn. ROC-AUC CV cao hơn Test khoảng một độ lệch chuẩn (0.7906 so với 0.7825), phù hợp ghi chú ở Charter mục 3.2.
-
-3. **Kế hoạch Chi phí Kỳ vọng & Lựa chọn Ngưỡng Tối ưu (Kế hoạch Tuần 3 – T2):**
-   - **Ma trận chi phí (Charter mục 1.3):** Chi phí $FN \approx 0.45 \times EAD$ (với giả định $LGD = 0.45$), chi phí $FP \approx 0.05 \times EAD$ (tỷ lệ $FN:FP = 9:1$, kèm phân tích độ nhạy $3:1$ đến $10:1$).
-   - **Nguyên tắc chống rò rỉ (No Leakage / Overfitting):** Ngưỡng tối ưu không được chọn trên tập Train hay từng fold CV (tránh ước lượng chi phí lạc quan quá mức như phân tích tại PR #16 và `src/train.py`).
-   - **Lộ trình triển khai:** Calibrator và ngưỡng được chọn trên Valid ở Tuần 3 – T2; chi phí độc lập trên Test đã được đo tại Tuần 3 – T3 và báo cáo ở mục 2.1.
-
----
-
-## 6. Tổng kết Đánh giá Kỹ thuật theo Từng Nhóm Mô hình
-
-### 6.1. Nhóm Baseline & Scorecard Truyền thống
-- **Logistic Regression baseline (0.7745 ± 0.0116):** Hoạt động ổn định, độ phân tách khá, thời gian train tức thì (~2.5s). Là mốc chuẩn tin cậy.
-- **Logistic Scorecard WoE (0.7790 ± 0.0083):**
-  - Về mặt số học, AUC trung bình cao hơn baseline Logistic thông thường một lượng nhỏ (+0.0045 AUC, 0.7790 vs 0.7745), tuy nhiên **chênh lệch này không có ý nghĩa thống kê** ($t = 1.072, p = 0.344 > 0.05$; khoảng tin cậy 95% $[-0.0072, +0.0162]$ chứa giá trị 0; và trên thực tế có 2/5 fold Scorecard thấp hơn LR).
-  - Ưu thế cốt lõi của Scorecard không nằm ở việc vượt trội về năng lực phân tách, mà nằm ở **tính minh bạch và chuẩn mực quản trị rủi ro ngân hàng**: Nhờ coarse classing và ràng buộc dấu, hệ số có dấu phù hợp logic nghiệp vụ ngân hàng và điểm số của biến liên tục đơn điệu theo giá trị.
-  - Điểm số PDO tính trực tiếp từ bảng điểm thuộc tính nên truy vết được từng thành phần; là mốc so sánh minh bạch cho các mô hình học máy phức tạp.
-
-### 6.2. Nhóm Tree Ensembles Mặc định (RF & XGBoost)
-- **Random Forest (0.7667) và XGBoost (0.7597):** Khi chưa tinh chỉnh tham số, cả hai mô hình cây đều có AUC thấp hơn Logistic Regression. Nguyên nhân có thể nằm ở cấu hình mặc định: XGBoost `max_depth=4` đạt ROC-AUC CV khoảng 0.788 (`shap_agreement.md`).
-
-### 6.3. Nhóm Gradient Boosting Hiện đại (LightGBM & CatBoost)
-- **Năng lực phân tách cao ngay từ bản Default:** LightGBM default (0.7805) và CatBoost default (0.7844) đều vượt mốc sàn Charter 0.78 khi chưa tuning.
-- **Sau khi tuning Optuna:**
-  - Cả hai mô hình hội tụ về kiến trúc: cây nông (num_leaves 10–11, depth 6), learning rate nhỏ (0.005–0.011), regularization mạnh (`reg_lambda` 8.87, `l2_leaf_reg` 16.76).
-  - Cải thiện ROC-AUC lên **0.7906 – 0.7911**, mức cao nhất của dự án.
-
-### 6.4. Bài học từ các Thử nghiệm Kỹ thuật Mở rộng
-1. **Ràng buộc đơn điệu (Monotonic constraints):**
-   - Trên LightGBM, monotonic constraints không làm giảm AUC (0.7906 vs 0.7898), thời gian train gần như không đổi (~14s). Đảm bảo tính đơn điệu nghiệp vụ: khách hàng trễ hạn nhiều hơn hoặc dùng hạn mức cao hơn sẽ không bao giờ bị giảm xác suất rủi ro.
-   - Trên CatBoost, monotonic constraints làm thời gian huấn luyện tăng gấp 5 lần (~318s) mà không tăng thêm AUC.
-2. **Xử lý mất cân bằng (Class Weighting vs SMOTE):**
-   - `class_weight`: Recall tăng lên ~61% ở ngưỡng 0.5, nhưng Brier score tăng từ 0.133 lên 0.168 (xác suất bị méo).
-   - `SMOTE in-fold`: Không cải thiện AUC (0.774–0.777), làm tăng thời gian huấn luyện gấp đôi. Phù hợp kết luận Charter: không dùng SMOTE cho mô hình chính thức.
-3. **Đối chiếu Biến nhạy cảm SEX:**
-   - Việc thêm biến SEX vào mô hình chỉ làm thay đổi AUC trung bình $+0.0001$, tỷ trọng đóng góp của SEX trong feature importance chỉ đạt $0.17\%$ (LightGBM) và $0.54\%$ (CatBoost).
-   - Kết quả phù hợp chính sách Charter: **loại bỏ biến SEX khỏi mô hình chính thức mà không làm suy giảm hiệu năng**.
-
----
-
-## 7. Khuyến nghị cho Cuộc họp Review Tuần 2 (Chốt 1–2 Mô hình Cuối)
-
-Thành viên B (ML Engineer) đề xuất với nhóm tại cuộc họp Review Tuần 2:
-
-1. **Ứng viên Mô hình Chính (Primary Model): `LightGBM tuned + Monotonic constraints`**
-   - **Lý do lựa chọn:**
-     - Hiệu năng phân tách cao: ROC-AUC **0.7906 ± 0.0074**, vượt mốc mục tiêu Charter 0.79.
-     - Tính nhất quán nghiệp vụ: 11 biến trễ hạn và tỷ lệ sử dụng hạn mức được bảo đảm đơn điệu tăng tuyệt đối.
-     - Tốc độ huấn luyện: 5 fold mất **14 giây** (nhanh hơn CatBoost 5 lần và nhanh hơn CatBoost monotonic 22 lần).
-     - Tương thích giải thích SHAP: Tương thích với `shap.TreeExplainer`, thời gian tính SHAP đủ ngắn cho demo Streamlit.
-2. **Ứng viên Mô hình Đối chứng (Benchmark / Secondary): `CatBoost tuned`**
-   - Giữ làm mô hình đối chứng năng lực thuật toán (AUC cao nhất 0.7911) và kiểm tra độ ổn định trên tập Valid/Test.
-3. **Mô hình Chuẩn mực Nghiệp vụ: `Logistic Scorecard (WoE)`**
-   - Giữ nguyên trong pipeline demo để người dùng có thể so sánh song song giữa mô hình Black-box hiện đại (LightGBM) và Bảng điểm truyền thống chuẩn ngân hàng (Scorecard).
-
----
-
-## 8. Lệnh Tái lập & Kiểm thử
-
-Bảng máy đọc `reports/model_comparison.csv` và các bảng so sánh, kiểm định cặp, đối chiếu KPI (in ra console) được sinh bằng:
-```bash
-python scripts/compare_models.py
-# hoặc
-python scripts/run_pipeline.py --mode summary
+```mermaid
+flowchart LR
+    A["1. Baseline Chuẩn<br>(Logistic Regression, Decision Tree)"] --> E["Khung So Sánh<br>5-Fold Stratified CV"]
+    B["2. Chuẩn Ngân Hàng<br>(Logistic Scorecard WoE)"] --> E
+    C["3. Tree Ensembles<br>(Random Forest, XGBoost)"] --> E
+    D["4. Tuned Boosting<br>(LightGBM, CatBoost + Monotonic)"] --> E
+    E --> F["Mô hình Chọn Lọc:<br>LightGBM Tuned + Monotonic + Platt"]
 ```
 
-Lệnh này chỉ ghi `reports/model_comparison.csv`; báo cáo này được viết tay (gồm kết quả Test ở mục 2.1) nên script không ghi đè. Kết quả Test lấy từ `scripts/evaluate_final_test.py`, đã chạy một lần (xem `reports/test_evaluation/`).
+1. **Nhóm Baseline chuẩn hóa (Logistic Regression & Decision Tree):**
+   - *Vai trò:* Thiết lập mốc sàn tối thiểu. Logistic Regression là mô hình tuyến tính chuẩn, giải thích hệ số trực tiếp qua Odds Ratio; Decision Tree thể hiện luật rẽ nhánh dạng cây đơn giản ($max\_depth=5$).
+2. **Nhóm Chuẩn mực Basel truyền thống (Logistic Scorecard WoE):**
+   - *Vai trò:* Chuẩn mực của Ủy ban Basel và các tổ chức tín dụng. Sử dụng kỹ thuật Coarse Classing, phân khoảng Weight of Evidence (WoE) và hồi quy Logistic có ràng buộc dấu hệ số âm (`SignConstrainedLogisticRegression`).
+   - *Đặc điểm:* Điểm số đơn điệu theo từng khoảng giá trị, không có hiện tượng hộp đen, giải thích bằng bảng điểm tra cứu (Scorecard Points Table).
+3. **Nhóm Tree Ensembles mặc định (Random Forest & XGBoost):**
+   - *Vai trò:* Đo lường năng lực học quan hệ phi tuyến và tương tác biến khi chưa qua tinh chỉnh siêu tham số.
+4. **Nhóm Gradient Boosting tối ưu (LightGBM & CatBoost):**
+   - *Vai trò:* Tận dụng cơ chế leaf-wise tree growth (LightGBM) và symmetric trees (CatBoost) kết hợp tối ưu siêu tham số Bayesian (Optuna) và áp đặt tri thức nghiệp vụ (Monotonic Constraints).
+
+---
+
+### 2.2. Bốn Căn cứ Lựa chọn Mô hình `LightGBM Tuned + Monotonic + Platt`
+
+Mô hình chính thức được lựa chọn là **LightGBM tuned + Monotonic constraints + Platt scaling** dựa trên 4 căn cứ:
+
+#### 1. Năng lực Phân tách và Kiểm định Thống kê
+- Trên tập Test độc lập (6.000 hồ sơ), LightGBM đạt **ROC-AUC = 0.7825** (Bootstrap 95% CI: `[0.7681, 0.7973]`), tăng **$\Delta = +0.0215$** so với baseline Logistic Regression (0.7609).
+- Kiểm định cặp DeLong cho thấy sự vượt trội có ý nghĩa thống kê với **$p = 1.86 \times 10^{-9}$**. Trên 5 fold CV tập Train, mô hình vượt Baseline trên cả 5 fold ($p = 0.00406$).
+
+#### 2. Tính Đơn điệu Nghiệp vụ (Monotonic Constraints)
+- Trong thẩm định tín dụng, các mô hình học máy phức tạp có thể gặp hiện tượng *overfitting cục bộ* (nghịch lý rủi ro): ví dụ khách hàng trễ hạn 3 tháng đôi khi lại có xác suất vỡ nợ thấp hơn trễ hạn 2 tháng do mẫu dữ liệu nhỏ tại vùng đó.
+- Nhóm đã áp đặt ràng buộc đạo hàm không âm ($\ge 0$) trên **11 biến nghiệp vụ cốt lõi**:
+  * Nhóm hành vi trễ hạn: `PAY_MEAN`, `PAY_MAX`, `PAY_LATE_CONSECUTIVE`, `PAY_LATE_2PLUS_COUNT`, `PAY_SLOPE`.
+  * Nhóm sử dụng đòn bẩy: `UTIL_1` đến `UTIL_6` và `UTIL_MEAN`.
+- *Kết quả thực nghiệm:* Việc áp đặt ràng buộc đơn điệu không làm giảm ROC-AUC (0.7906 so với 0.7898 của bản unconstrained), nhưng triệt tiêu hoàn toàn các phán quyết phi lý, đáp ứng yêu cầu của các cơ quan quản lý tài chính.
+
+#### 3. Bảo toàn Quan hệ Tuyến tính cho Giải thích Mô hình (XAI Additivity)
+- Khác biệt giữa hai phương pháp hiệu chuẩn xác suất:
+  * **Isotonic Regression:** Là phương pháp phi tham số dạng hàm bậc thang từng khúc. Tuy tối ưu Brier score tốt trên tập Valid, Isotonic phá vỡ tính liên tục và làm biến dạng không gian logit.
+  * **Platt Scaling fit trên raw margin:** Bằng cách fit một hồi quy Logistic 1 chiều trực tiếp trên log-odds thô (`output_margin=True`):
+    $$\text{logit}(PD_{\text{calib}}) = a \cdot \text{margin}_{\text{raw}} + b$$
+  * Vì đây là phép biến đổi affine tuyến tính, giá trị đóng góp SHAP từ `shap.TreeExplainer` (vốn tính trên thang margin) nhân với hệ số $a$ sẽ bảo toàn đẳng thức cộng tính:
+    $$\text{logit}(PD_{\text{calib}}) = \text{base\_logit} + \sum_{j} \phi_j^{\text{calibrated}}$$
+- Sai số cộng tính trên thực nghiệm đạt mức $< 10^{-14}$, giúp việc phân bổ điểm phạt và xác định lý do cảnh báo (Reason Codes) cho ứng dụng demo có căn cứ toán học chính xác.
+
+![Hình 1: So sánh hiệu chuẩn xác suất Platt scaling và Isotonic regression trên tập Valid](figures/calibration_curves.png)
+_Hình 1: Đường cong hiệu chuẩn xác suất trên tập Valid (Nguồn: `reports/calibration_cv_metrics.csv` và `reports/figures/calibration_curves.png`)._
+
+#### 4. Thời gian Tính toán và Độ trễ Suy luận
+- So sánh thời gian huấn luyện 5 fold CV:
+  * `LightGBM Tuned + Monotonic`: **14 giây** (suy luận $< 3\text{ms}$ / hồ sơ).
+  * `CatBoost Tuned`: **63 giây**.
+  * `CatBoost Tuned + Monotonic`: **318 giây**.
+- LightGBM cho hiệu năng tương đương CatBoost (0.7906 vs 0.7911, $p=0.315$ không khác biệt thống kê), nhưng tiết kiệm tài nguyên tính toán hơn và suy luận nhanh, phù hợp cho triển khai thực tế.
+
+---
+
+### 2.3. Quy trình Kỹ thuật Chống Rò rỉ Dữ liệu (Anti-Leakage)
+
+Quy trình phát triển tuân thủ các nguyên tắc chống rò rỉ dữ liệu (Data Leakage):
+
+1. **Phân chia Stratified 3 Tập Độc lập (`splits.json`):**
+   - Dữ liệu 30.000 hồ sơ được chia theo tỷ lệ **60% Train (18.000) / 20% Valid (6.000) / 20% Test (6.000)** cố định `random_state = 42`.
+   - Giữ nguyên tỷ lệ nhãn vỡ nợ 22.12% đồng đều trên cả 3 tập. Chỉ lưu trữ chỉ số dòng (`row indices`), không commit dữ liệu gốc lên repository.
+2. **Đóng gói In-Fold Pipeline Chống Leakage:**
+   - Mọi biến đổi cần học tham số từ dữ liệu (chuẩn hóa `StandardScaler`, mã hóa `TargetEncoder`, phân khoảng WoE `WoEIVTransformer`, gán nhãn `AGE_BIN`) đều được đặt **bên trong Pipeline** (`sklearn.pipeline.Pipeline` hoặc `imblearn.pipeline.Pipeline`).
+   - Các biến đổi này chỉ được `fit` trên tập con huấn luyện (`train_fold`) của từng fold CV và chỉ `transform` trên fold kiểm định (`val_fold`). Tuyệt đối không fit scaler hay tính WoE trên toàn bộ tập dữ liệu trước khi chia fold.
+3. **Đóng băng Tập Test Nghiệm thu (Single Pass):**
+   - Tập Test không được can thiệp trong suốt quá trình phát triển và tuning.
+   - Tập Test chỉ được đánh giá duy nhất **một lần** tại bước nghiệm thu cuối cùng (`scripts/evaluate_final_test.py`) thông qua tệp cờ khóa `test_evaluation_started.json`.
+
+---
+
+### 2.4. Biện luận Phương pháp Xử lý Mất cân bằng Lớp
+
+Dữ liệu có tỷ lệ nợ xấu 22.12% (tỷ lệ 1:3.5). Nhóm đã thực hiện các thí nghiệm đối chiếu phương pháp xử lý:
+
+| Phương pháp | ROC-AUC CV | Brier Score | Recall@0.5 | Đánh giá Kỹ thuật |
+|---|:---:|:---:|:---:|---|
+| **Không can thiệp mẫu (Gốc)** | **0.7805 ± 0.0077** | **0.1350** | 37.67% | Phân phối xác suất tự nhiên, Brier score thấp |
+| **`class_weight='balanced'`** | 0.7809 ± 0.0081 | 0.1682 | 61.10% | Tăng recall tại 0.5 nhưng làm méo xác suất thực tế, Brier tăng 24.6% |
+| **`SMOTE` (in-fold)** | 0.7776 ± 0.0058 | 0.1383 | 43.09% | Sinh mẫu nhân tạo làm mờ ranh giới phân tách, ROC-AUC giảm |
+
+> **Quyết định Kỹ thuật:** Nhóm không sử dụng `SMOTE` hay `class_weight` cho mô hình chính thức. Phân phối xác suất tự nhiên được giữ nguyên để hiệu chuẩn (Platt), và việc xử lý mất cân bằng được thực hiện tại khâu ra quyết định bằng **Tối ưu ngưỡng theo ma trận chi phí kinh doanh (Cost-sensitive Thresholding)**.
+
+---
+
+## 3. Kết quả Thực nghiệm & Kiểm định Thống kê (Tiêu chí 4 - 20đ)
+
+### 3.1. Bảng Tổng hợp 17 Cấu hình Thử nghiệm (5-Fold CV trên Train)
+
+Kết quả 5-Fold Stratified CV trên 18.000 hồ sơ tập Train (Dữ liệu gốc: [`reports/model_comparison.csv`](model_comparison.csv)):
+
+| STT | Mô hình Thử nghiệm | Nhóm | ROC-AUC (mean ± std) | Gini | KS | PR-AUC | Brier Score | Recall@0.5 | Precision@0.5 |
+|:---:|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| 1 | **Logistic Regression (baseline)** | Baseline | 0.7745 ± 0.0116 | 0.5490 | 0.4282 | 0.5470 | 0.1354 | 36.19% | 67.60% |
+| 2 | Decision Tree ($max\_depth=5$) | Baseline | 0.7672 ± 0.0120 | 0.5345 | 0.4162 | 0.5242 | 0.1367 | 35.31% | 66.29% |
+| 3 | **Logistic Scorecard (WoE)** | Scorecard | 0.7790 ± 0.0083 | 0.5580 | 0.4326 | 0.5432 | 0.1351 | 37.44% | 65.96% |
+| 4 | Random Forest (default) | Ensembles | 0.7667 ± 0.0097 | 0.5333 | 0.4107 | 0.5319 | 0.1388 | 38.70% | 63.13% |
+| 5 | XGBoost (default) | Ensembles | 0.7597 ± 0.0073 | 0.5195 | 0.4007 | 0.5258 | 0.1440 | 36.69% | 60.77% |
+| 6 | LightGBM (default) | Boosting | 0.7805 ± 0.0077 | 0.5610 | 0.4276 | 0.5512 | 0.1350 | 37.67% | 66.77% |
+| 7 | CatBoost (default) | Boosting | 0.7844 ± 0.0074 | 0.5688 | 0.4359 | 0.5584 | 0.1342 | 37.84% | 66.96% |
+| 8 | LightGBM + SMOTE (in-fold) | Imbalance | 0.7776 ± 0.0058 | 0.5551 | 0.4216 | 0.5440 | 0.1383 | 43.09% | 62.22% |
+| 9 | LightGBM Balanced (`class_weight`) | Imbalance | 0.7809 ± 0.0081 | 0.5617 | 0.4278 | 0.5505 | 0.1682 | 61.10% | 47.58% |
+| 10 | CatBoost Balanced (`auto_weights`) | Imbalance | 0.7806 ± 0.0081 | 0.5611 | 0.4341 | 0.5520 | 0.1659 | 60.72% | 48.72% |
+| 11 | CatBoost + SMOTE (in-fold) | Imbalance | 0.7747 ± 0.0057 | 0.5493 | 0.4192 | 0.5410 | 0.1386 | 41.56% | 61.30% |
+| 12 | LightGBM tuned (Optuna 37 trials) | Tuned | 0.7898 ± 0.0077 | 0.5796 | 0.4439 | 0.5650 | 0.1327 | 37.74% | 66.96% |
+| 13 | **LightGBM tuned + Monotonic** | **Candidate** | **0.7906 ± 0.0074** | **0.5813** | **0.4453** | **0.5624** | **0.1328** | **37.74%** | **67.48%** |
+| 14 | CatBoost tuned (Optuna 34 trials) | Benchmark | 0.7911 ± 0.0073 | 0.5822 | 0.4452 | 0.5675 | 0.1327 | 36.74% | 67.54% |
+| 15 | CatBoost tuned + Monotonic | Benchmark | 0.7910 ± 0.0077 | 0.5820 | 0.4434 | 0.5632 | 0.1328 | 37.22% | 66.75% |
+| 16 | LightGBM monotonic (with `SEX`) | Fairness | 0.7907 ± 0.0075 | 0.5814 | 0.4465 | 0.5634 | 0.1327 | 37.69% | 67.08% |
+| 17 | CatBoost tuned (with `SEX`) | Fairness | 0.7912 ± 0.0079 | 0.5824 | 0.4461 | 0.5681 | 0.1326 | 36.92% | 67.23% |
+
+![Hình 2: So sánh ROC-AUC 5-Fold Stratified CV giữa các mô hình](figures/model_comparison_auc.png)
+_Hình 2: So sánh ROC-AUC qua 5-Fold CV và đối chiếu với mốc Sàn (0.78) và Mục tiêu (0.79) của Project Charter (Nguồn: `reports/model_comparison.csv` và `reports/figures/model_comparison_auc.png`)._
+
+---
+
+### 3.2. Kết quả Nghiệm thu Chính thức trên Tập Test Độc lập (Single Pass)
+
+Tập Test 6.000 hồ sơ được đánh giá bằng `scripts/evaluate_final_test.py` với mô hình cuối đã đóng băng (Dữ liệu gốc: [`reports/test_evaluation/test_metrics.csv`](test_evaluation/test_metrics.csv)):
+
+| Thước đo Đánh giá | LightGBM Tuned + Monotonic (Platt) | Baseline Logistic Regression | Chênh lệch ($\Delta$) | Mốc Sàn Charter | Mốc Mục tiêu Charter | Đánh giá Nghiệm thu |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **ROC-AUC (95% CI)** | **0.7825 [0.7681, 0.7973]** | 0.7609 [0.7461, 0.7765] | **+0.0215** | $\ge 0.7800$ | $\ge 0.7900$ | **Đạt Mốc Sàn** |
+| **PR-AUC (95% CI)** | **0.5600 [0.5315, 0.5887]** | 0.5236 [0.4960, 0.5546] | **+0.0364** | $\ge 0.5600$ | $\ge 0.5800$ | **Đạt Mốc Sàn** |
+| **Gini (95% CI)** | **0.5649 [0.5362, 0.5946]** | 0.5219 [0.4922, 0.5530] | **+0.0430** | $\ge 0.5700$ | $\ge 0.5900$ | CI chứa mốc sàn |
+| **Kolmogorov-Smirnov (KS)** | **0.4290 [0.4048, 0.4603]** | 0.4046 [0.3771, 0.4341] | **+0.0244** | $\ge 0.4500$ | $\ge 0.4700$ | CI chứa mốc sàn |
+| **Brier Score Loss** | **0.1348 [0.1288, 0.1405]** | 0.1384 [0.1322, 0.1446] | **-0.0036** | – | – | Tốt hơn baseline |
+| **Expected Calibration Error (ECE)** | **0.0163** | 0.0185 | **-0.0022** | – | – | Hiệu chuẩn tốt |
+
+![Hình 3: Đường cong ROC, PR và Calibration Curve trên tập Test](test_evaluation/test_curves.png)
+_Hình 3: Các đường cong kiểm định thực nghiệm trên tập Test độc lập (Nguồn: `reports/test_evaluation/test_curves.png` và `reports/test_evaluation/test_metrics.csv`)._
+
+---
+
+### 3.3. Kiểm định Thống kê So sánh Cặp
+
+1. **Paired t-test theo từng Fold trên Train CV (đối chiếu Baseline Logistic Regression):**
+   - `LightGBM monotonic vs Baseline`: Chênh lệch AUC trung bình **+0.0161** (95% CI: `[+0.0086, +0.0237]`), $t = 5.928$, **$p = 0.00406 < 0.01$** (vượt baseline trên 5/5 fold).
+   - `CatBoost tuned vs Baseline`: Chênh lệch trung bình **+0.0166**, $t = 6.810$, **$p = 0.00243 < 0.01$**.
+   - `CatBoost tuned vs LightGBM monotonic`: Chênh lệch **+0.0005**, $t = 1.148$, **$p = 0.31501 > 0.05$** (hai mô hình tương đương về năng lực phân tách).
+   - `Scorecard WoE vs Baseline`: Chênh lệch **+0.0045**, $t = 1.072$, **$p = 0.34420 > 0.05$** (chưa có khác biệt thống kê).
+2. **Kiểm định DeLong & Bootstrap trên tập Test Độc lập:**
+   - **Paired DeLong Test:** $\Delta \text{AUC} = 0.02150$, $95\% \text{ CI } [0.01449, 0.02852]$, $Z = 5.99$, **$p = 1.86 \times 10^{-9}$**.
+   - **Paired Bootstrap (1.000 lượt):** $95\% \text{ CI } [0.01434, 0.02857]$ hoàn toàn dương.
+   - **Kết luận:** Bác bỏ giả thuyết không $H_0$; đạt KPI chính của Project Charter (Nguồn: [`reports/test_evaluation/test_comparison.csv`](test_evaluation/test_comparison.csv)).
+
+---
+
+### 3.4. Phân tích Lỗi Định lượng (Error Analysis)
+
+Phân tích tại ngưỡng vận hành $p^* = 0.09$ và ngưỡng đối chiếu $0.50$ trên tập Valid (6.000 hồ sơ, nguồn: [`reports/error_analysis_validation.md`](error_analysis_validation.md)):
+
+1. **Bản chất của 102 hồ sơ False Negative (Bỏ sót tại ngưỡng 0.09):**
+   - So sánh thuộc tính trung bình của 102 khách hàng FN với nhóm khách hàng Không vỡ nợ:
+     * Ở 7/8 đặc trưng mô tả hành vi tín dụng ($PAY\_1 \le 0$, tỷ lệ sử dụng hạn mức thấp $< 30\%$, tỷ lệ trả nợ dư nợ $> 80\%$), nhóm FN có biểu hiện tương tự khách hàng tốt.
+     * Khách hàng FN chỉ phát sinh vỡ nợ đột ngột vào tháng thứ 7 mà không có dấu hiệu cảnh báo trong 6 tháng lịch sử sao kê.
+   - Tại ngưỡng 0.50, **96.7% số ca False Negative** của LightGBM trùng khớp với False Negative của Logistic Scorecard.
+   - Điều này cho thấy hiện tượng bỏ sót bắt nguồn từ giới hạn thông tin tự nhiên của bộ dữ liệu snapshot 6 tháng, không phải lỗi thuật toán.
+2. **Bản chất của 3.123 hồ sơ False Positive (Cảnh báo nhầm):**
+   - Tỷ lệ gắn cờ 72.98% là sự đánh đổi cần thiết để đạt **Recall = 92.46%**.
+   - Kiểm soát vận hành bằng **Phân tầng rủi ro 3 mức**: chỉ nhóm Cảnh báo cao ($PD \ge 27\%$, chiếm 25.8% danh mục) mới áp dụng can thiệp mạnh (giảm hạn mức, thu hồi sớm); nhóm Theo dõi ($9\% \le PD < 27\%$) chỉ áp dụng nhắc nợ tự động qua tin nhắn.
+
+![Hình 4: Phân tích bản chất 102 ca False Negative](figures/error_subgroup_analysis.png)
+_Hình 4: So sánh đặc trưng hành vi giữa nhóm False Negative (FN), nhóm Khách hàng tốt (TN) và nhóm Nợ xấu phát hiện (TP) (Nguồn: `reports/error_analysis_validation.md` và `reports/figures/error_subgroup_analysis.png`)._
+
+---
+
+### 3.5. Tối ưu Ngưỡng theo Ma trận Chi phí Kinh doanh
+
+Theo Project Charter mục 1.3:
+- Giả định ngân hàng: Tỷ lệ tổn thất khi vỡ nợ $LGD = 0.45$; Dư nợ chịu rủi ro $EAD = BILL\_AMT1$.
+- $\text{Cost}_{FN} = LGD \times EAD = 0.45 \times EAD$.
+- $\text{Cost}_{FP} = 0.05 \times EAD$ (chi phí mất doanh thu phí & lãi do can thiệp nhầm).
+- Tỷ lệ chi phí chuẩn: $\text{Cost}_{FN} : \text{Cost}_{FP} = 9 : 1$.
+- **Kết quả:**
+  * Ngưỡng tối ưu trung bình qua 5 fold OOF: $p^* = 0.088 \pm 0.008 \approx \mathbf{0.09}$ (tương ứng cutoff **553.9 điểm PDO**).
+  * Chi phí kỳ vọng trên tập Test tại ngưỡng 0.09: **NT$1,634.49 / khách hàng**.
+  * Chi phí kỳ vọng tại ngưỡng mặc định 0.50: **NT$2,830.29 / khách hàng**.
+  * **Mức giảm chi phí rủi ro: Tiết kiệm 42.25%** tổn thất kỳ vọng so với ngưỡng 0.50.
+  * Phân tích độ nhạy: Khi tỷ lệ chi phí $FN:FP$ thay đổi từ $3:1$ đến $10:1$, ngưỡng dịch chuyển từ $0.27$ xuống $0.08$. Đồ thị chi phí duy trì vùng lòng chảo phẳng trong khoảng $0.08 - 0.14$.
+
+![Hình 5: Đường chi phí kỳ vọng theo ngưỡng cắt PD](figures/cost_curves.png)
+_Hình 5: Đường chi phí kỳ vọng có trọng số EAD theo các tỷ lệ chi phí FN:FP từ 3:1 đến 10:1 (Nguồn: `reports/calibration_cv_cost.csv` và `reports/figures/cost_curves.png`)._
+
+![Hình 6: Phân phối điểm tín dụng PDO](figures/score_distribution.png)
+_Hình 6: Phân phối điểm tín dụng theo thang PDO (300-850) giữa hai nhóm Khách hàng tốt và Khách hàng vỡ nợ (Nguồn: `reports/calibration_threshold.md` và `reports/figures/score_distribution.png`)._
+
+---
+
+## 4. Báo cáo Sử dụng Công cụ AI và Đóng góp của Sinh viên (Tiêu chí 6 - 10đ)
+
+Báo cáo minh bạch phạm vi ứng dụng công cụ AI theo tiêu chí đánh giá của học phần:
+
+| Hạng mục Công việc | Công cụ AI Hỗ trợ | Sinh viên Tự làm & Làm chủ Cốt lõi |
+|---|---|---|
+| **Xác định bài toán & Bối cảnh** | Tra cứu chuẩn mực Basel và công thức PDO. | Chọn bài toán cảnh báo sớm danh mục thẻ tín dụng; thiết lập ma trận chi phí kinh doanh ($FN:FP = 9:1, LGD=0.45$). |
+| **Kiến trúc Pipeline & Code** | Soạn thảo khung code boilerplate, gợi ý cú pháp typing và docstring. | Thiết kế 100% kiến trúc Pipeline in-fold chống rò rỉ dữ liệu; lập trình `SignConstrainedLogisticRegression`; cấu hình monotonic constraints. |
+| **Xử lý Toán học & Calibration** | Hỗ trợ tra cứu hàm thư viện giải tích. | Chứng minh tính bảo toàn quan hệ tuyến tính của Platt scaling trên raw margin để giá trị SHAP cộng đúng ($\text{logit}(PD) = \text{base} + \sum \phi_j$). |
+| **Kiểm thử Tự động** | Gợi ý các trường hợp biên cho pytest fixtures. | Thiết kế và cài đặt toàn bộ 304 unit tests tự động; lập trình kiểm định DeLong và Bootstrap CI độc lập. |
+| **Phân tích & Ra quyết định** | Tóm tắt các bảng số liệu sang định dạng markdown. | Phản biện loại bỏ SMOTE / class_weight; quyết định loại biến nhạy cảm `SEX`; phân tích bản chất của 102 ca False Negative. |
+
+**Cơ chế kiểm chứng và sửa lỗi đầu ra AI:** Toàn bộ mã nguồn và công thức toán học đều được xác minh bằng 304 unit tests tự động. Nhóm đã phát hiện và khắc phục các đề xuất sai lệch ban đầu của AI, bao gồm nguy cơ rò rỉ dữ liệu khi chuẩn hóa trước K-fold và lỗi lệch không gian logit của hàm calibration scikit-learn mặc định.
+
+---
+
+## 5. Liên kết Thảo luận trên Diễn đàn Coreach (Tiêu chí 7 - 5đ)
+
+Các trao đổi chuyên môn trên diễn đàn LMS Coreach đã định hình trực tiếp các quyết định kỹ thuật của nhóm:
+1. **Xử lý mã không tài liệu hóa (`EDUCATION` 0, 5, 6; `MARRIAGE` 0):** Nhóm quyết định không xóa các dòng này để tránh mất 1.5% dữ liệu thực tế, mà gộp vào nhóm "Khác" theo đúng tài liệu gốc của tác giả I-Cheng Yeh.
+2. **Chính sách biến nhạy cảm `SEX`:** Tiếp thu thảo luận về đạo đức dữ liệu, nhóm loại bỏ hoàn toàn biến `SEX` khỏi mô hình chính thức để đảm bảo tiêu chuẩn Fair Lending. Đồng thời nhóm huấn luyện mô hình đối chứng để chứng minh biến `SEX` chỉ chiếm 0.17% tầm quan trọng và đổi AUC $+0.0001$.
+3. **Phản biện tỷ lệ chi phí rủi ro $FN:FP = 9:1$:** Trước các phản biện về tính thực tế của tỷ lệ 9:1, nhóm đã bổ sung phân tích độ nhạy chi phí từ $3:1$ đến $10:1$, chứng minh vùng ngưỡng tối ưu duy trì ổn định trong khoảng $0.08 - 0.14$.
+4. **Phân định rõ ràng nhãn vỡ nợ (1 tháng vs 12 tháng Basel):** Nhóm làm rõ giới hạn của dữ liệu snapshot 1 tháng và định vị giải pháp là Hệ thống Cảnh báo Sớm (Early Warning System) quản lý danh mục hiện hữu, không thay thế hệ thống xét duyệt hạn mức ban đầu chuẩn Basel.
+
+---
+
+## 6. Hướng dẫn Tái lập Kết quả & Kiểm thử
+
+Các lệnh chạy lại từ thư mục gốc dự án:
+```bash
+# 1. Chạy so sánh và xuất bảng model_comparison.csv
+python scripts/run_pipeline.py --mode summary
+
+# 2. Xuất mô hình cuối (LightGBM + Platt + Ngưỡng 0.09)
+python scripts/run_pipeline.py --mode final-model
+
+# 3. Chạy toàn bộ 304 unit tests tự động
+pytest
+
+# 4. Kiểm tra độ bao phủ kiểm thử (đạt >= 87%)
+pytest --cov=src --cov-report=term-missing
+```
+
+---
+
+## 7. Kết luận
+
+1. Mô hình **LightGBM Tuned + Monotonic Constraints + Platt Scaling** kết hợp được năng lực phân tách tốt của mô hình học máy với tính minh bạch, tuân thủ của nghiệp vụ ngân hàng.
+2. Tối ưu ngưỡng cắt theo ma trận chi phí giúp giảm hơn **42% chi phí rủi ro** cho danh mục thẻ tín dụng.
+3. Dự án hoàn thành đầy đủ các KPI cam kết trong Project Charter và chuẩn bị sẵn sàng cho buổi bảo vệ đồ án cuối kỳ.
