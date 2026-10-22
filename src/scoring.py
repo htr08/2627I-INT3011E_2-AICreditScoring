@@ -59,8 +59,6 @@ def scorecard_points_table(pipeline, base_score=BASE_SCORE, base_odds=BASE_ODDS,
     Giá trị chưa gặp khi fit nhận WoE = 0, tức 0 điểm. Với SignConstrainedLogisticRegression,
     chỉ các biến còn lại sau khi loại hệ số sai dấu (model.selected_features_) có trong bảng.
     """
-    import pandas as pd
-
     woe = pipeline.named_steps["woe_iv"]
     model = pipeline.named_steps["model"]
     factor, _ = pdo_params(base_score, base_odds, pdo)
@@ -85,28 +83,15 @@ def scorecard_points_table(pipeline, base_score=BASE_SCORE, base_odds=BASE_ODDS,
             })
     return pd.DataFrame(rows)
 
+
 def calculate_ks_statistic(y_true, y_prob) -> float:
     """Tính chỉ số Kolmogorov-Smirnov (KS) statistic giữa 2 phân phối Good/Bad."""
-    import pandas as pd
+    from src.evaluate import compute_ks
 
-    df_eval = pd.DataFrame({"target": y_true, "prob": y_prob}).sort_values("prob", ascending=True)
-    df_eval["good"] = (df_eval["target"] == 0).astype(int)
-    df_eval["bad"] = (df_eval["target"] == 1).astype(int)
-
-    total_good = df_eval["good"].sum()
-    total_bad = df_eval["bad"].sum()
-
-    if total_good == 0 or total_bad == 0:
-        return 0.0
-
-    df_eval["cum_good"] = df_eval["good"].cumsum() / total_good
-    df_eval["cum_bad"] = df_eval["bad"].cumsum() / total_bad
-
-    ks_stat = float(np.max(np.abs(df_eval["cum_good"] - df_eval["cum_bad"])))
-    return ks_stat
+    return compute_ks(np.asarray(y_true), np.asarray(y_prob))
 
 
-def compare_models_performance(models_dict: dict, X_test, y_test) -> "pd.DataFrame":
+def compare_models_performance(models_dict: dict, X_test, y_test) -> pd.DataFrame:
     """So sánh hiệu năng giữa Logistic Scorecard và các mô hình Black-box.
 
     Args:
@@ -117,7 +102,6 @@ def compare_models_performance(models_dict: dict, X_test, y_test) -> "pd.DataFra
     Returns:
         DataFrame tổng hợp các chỉ số AUC, Gini, KS.
     """
-    import pandas as pd
     from sklearn.metrics import roc_auc_score
 
     results = []
@@ -141,7 +125,7 @@ def compare_models_performance(models_dict: dict, X_test, y_test) -> "pd.DataFra
     return pd.DataFrame(results)
 
 
-def export_scorecard_to_dict(scorecard_df: "pd.DataFrame") -> dict:
+def export_scorecard_to_dict(scorecard_df: pd.DataFrame) -> dict:
     """Chuyển scorecard_points_table thành dạng Dictionary tra cứu điểm nhanh.
 
     Args:
